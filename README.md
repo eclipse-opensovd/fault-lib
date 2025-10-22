@@ -21,3 +21,5 @@ OpenSOVD Fault Library
 ## Design
 
 The high-level design can be found here: [OpenSOVD Design](https://github.com/eclipse-opensovd/opensovd/blob/main/docs/design/design.md)
+
+The Fault Lib design can be found here: [Fault Lib Design](docs/design/design.md)
