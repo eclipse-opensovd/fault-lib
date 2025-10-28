@@ -20,10 +20,10 @@ macro_rules! fault_descriptor {
             fault_type: $kind,
             default_severity: $sev,
             compliance: &[$($($ctag),*,)?],
-            debounce: None$(.or(Some($debounce)))?,
-            reset: None$(.or(Some($reset)))?,
-            summary: None$(.or(Some($summary)))?,
-            docs_url: None$(.or(Some($docs)))?,
+            debounce: $(Some($debounce))?,
+            reset: $(Some($reset))?,
+            summary: $(Some($summary))?,
+            docs_url: $(Some($docs))?,
         }
     }};
 }

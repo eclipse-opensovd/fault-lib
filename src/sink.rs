@@ -13,7 +13,7 @@ pub trait LogHook: Send + Sync + 'static {
 #[allow(async_fn_in_trait)]
 pub trait FaultSink: Send + Sync + 'static {
     /// Publish a record.
-    async fn publish(&self, record: FaultRecord) -> Result<(), SinkError>;
+    fn publish(&self, record: FaultRecord) -> Result<(), SinkError>;
 }
 
 #[derive(thiserror::Error, Debug)]

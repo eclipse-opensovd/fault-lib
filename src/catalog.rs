@@ -1,7 +1,7 @@
 use crate::{ids::FaultId, model::FaultDescriptor};
 
 /// Declarative catalog shared between reporters and the Diagnostic Fault Manager.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FaultCatalog {
     pub id: &'static str,
     pub version: u64,

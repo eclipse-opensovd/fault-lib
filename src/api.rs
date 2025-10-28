@@ -50,7 +50,7 @@ pub struct Reporter {
 impl Reporter {
     /// Report an occurrence of a fault. Always logs via LogHook, then publishes via sink.
     #[allow(async_fn_in_trait)]
-    pub async fn report(
+    pub fn report(
         &self,
         descriptor: &FaultDescriptor,
         opts: ReportOptions,
@@ -91,6 +91,6 @@ impl Reporter {
         self.api.logger.on_report(&record);
 
         // 2) Ship the record; the sink decides buffering/retry policy.
-        self.api.sink.publish(record).await
+        self.api.sink.publish(record)
     }
 }
