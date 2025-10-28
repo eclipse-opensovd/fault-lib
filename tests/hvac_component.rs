@@ -9,14 +9,16 @@ use std::time::Duration;
 // Pull the pieces the component needs: descriptor macro, catalog, policies,
 // IDs, domain models, and the traits for logging/sink integration.
 use fault_lib::{
-    fault_descriptor,
+    FaultRecord, Reporter,
     api::FaultApi,
     catalog::FaultCatalog,
-    config::{DebounceMode, DebouncePolicy, ReporterConfig, ReportOptions, ResetPolicy, ResetTrigger},
+    config::{
+        DebounceMode, DebouncePolicy, ReportOptions, ReporterConfig, ResetPolicy, ResetTrigger,
+    },
+    fault_descriptor,
     ids::{FaultId, SourceId},
     model::{ComplianceTag, FaultSeverity, FaultType, KeyValue, LifecyclePhase},
     sink::{FaultSink, LogHook, SinkError},
-    Reporter,
 };
 
 /// Catalog slice: in a real code base this could be generated
@@ -80,7 +82,7 @@ struct VehicleBusSink;
 #[allow(clippy::unused_async)]
 impl FaultSink for VehicleBusSink {
     // In real deployments this is where we would enqueue into IPC to the central manager.
-    fn publish(&self, record: fault_lib::model::FaultRecord) -> Result<(), SinkError> {
+    fn publish(&self, record: &fault_lib::model::FaultRecord) -> Result<(), SinkError> {
         println!(
             "[fault-sink] queued {} (catalog={}#{})",
             record.descriptor.name, record.catalog_id, record.catalog_version
@@ -120,40 +122,25 @@ fn init_hvac_faults() -> Reporter {
 /// Somewhere in the control loop we can raise faults using the reporter.
 #[allow(dead_code)]
 // `async` because publishing may involve I/O; Rust futures make it cheap to await.
-fn handle_blower_fault(reporter: Reporter, measured_rpm: f32, commanded_rpm: f32) {
+fn handle_blower_fault(reporter: &Reporter, measured_rpm: f32, commanded_rpm: f32) {
     // Look up the descriptor we registered earlier. Real code would likely keep
     // a direct reference instead of searching each time.
-    let descriptor = HVAC_CATALOG
-        .find(&FaultId::Text("hvac.blower.speed_sensor_mismatch"))
-        .expect("descriptor must exist in catalog");
-
-    // ReportOptions let us override severity/policies and attach rich metadata.
-    let options = ReportOptions {
-        severity: None, // stick with descriptor default
-        metadata: vec![
-            KeyValue {
-                key: "measured_rpm",
-                value: measured_rpm.to_string(),
-            },
-            KeyValue {
-                key: "commanded_rpm",
-                value: commanded_rpm.to_string(),
-            },
-        ],
-        debounce: None, // use catalog policy; could override for A/B trials
-        reset: None,
-        extra_compliance: vec![],
-    };
+    let record: FaultRecord = FaultRecord::new(reporter, &FaultId::Text("hvac.blower.speed_senso"))
+        .with_severity(None)
+        .with_metadata("measured_rpm", measured_rpm.to_string())
+        .with_metadata("commanded_rpm", commanded_rpm.to_string())
+        .with_debounce(None)
+        .with_reset(None);
 
     // The reporter logs locally, tags the record with catalog/version,
     // and hands it off to the sink for transport.
-    if let Err(err) = reporter.report(descriptor, options) {
+    if let Err(err) = reporter.report(&record) {
         eprintln!("failed to publish blower mismatch fault: {err}");
     }
 }
 
 #[test]
-fn test_handle_blower_fault(){
+fn test_handle_blower_fault() {
     let reporter = init_hvac_faults();
-    handle_blower_fault(reporter, 0.6, 0.9);
+    handle_blower_fault(&reporter, 0.6, 0.9);
 }

@@ -15,10 +15,10 @@ pub mod utils;
 // forcing consumers to dig through modules.
 pub use api::{FaultApi, Reporter};
 pub use catalog::FaultCatalog;
-pub use config::{DebouncePolicy, ResetPolicy, ReportOptions, ReporterConfig};
+pub use config::{DebouncePolicy, ReportOptions, ReporterConfig, ResetPolicy};
 pub use ids::{FaultId, SourceId};
 pub use model::{
-    ComplianceTag, FaultDescriptor, FaultLifecycleStage, FaultRecord, FaultSeverity,
-    FaultType, KeyValue, LifecyclePhase,
+    ComplianceTag, FaultDescriptor, FaultLifecycleStage, FaultRecord, FaultSeverity, FaultType,
+    KeyValue, LifecyclePhase,
 };
 pub use sink::{FaultSink, LogHook};
