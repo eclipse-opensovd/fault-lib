@@ -13,7 +13,7 @@ use fault_lib::{
     api::FaultApi,
     catalog::FaultCatalog,
     config::{
-        DebounceMode, DebouncePolicy, ReportOptions, ReporterConfig, ResetPolicy, ResetTrigger,
+        DebounceMode, DebouncePolicy, ReporterConfig, ResetPolicy, ResetTrigger,
     },
     fault_descriptor,
     ids::{FaultId, SourceId},
@@ -91,13 +91,55 @@ impl FaultSink for VehicleBusSink {
     }
 }
 
-/// Components wire this during init and hold on to the `Reporter`.
-fn init_hvac_faults() -> Reporter {
+struct DummyApp{
+    api: FaultApi,
+    reporter: Reporter,
+}
+
+impl DummyApp {
+    pub fn new(api: FaultApi, reporter: Reporter) -> Self{
+        Self {
+            api,
+            reporter
+        }
+    }
+
+    pub fn step(&self) {
+        self.handle_blower_fault(0.6, 0.9);
+    }
+
+    /// Somewhere in the control loop we can raise faults using the reporter.
+    #[allow(dead_code)]
+    // `async` because publishing may involve I/O; Rust futures make it cheap to await.
+    fn handle_blower_fault(&self, measured_rpm: f32, commanded_rpm: f32) {
+            // Look up the descriptor we registered earlier. Real code would likely keep
+    // a direct reference instead of searching each time.
+    let record: FaultRecord = FaultRecord::new(&self.reporter, &FaultId::Text("hvac.blower.speed_sensor_mismatch"))
+        .with_severity(None)
+        .with_metadata("measured_rpm", measured_rpm.to_string())
+        .with_metadata("commanded_rpm", commanded_rpm.to_string())
+        .with_debounce(None)
+        .with_reset(None);
+
+    // The reporter logs locally, tags the record with catalog/version,
+    // and hands it off to the sink for transport.
+    if let Err(err) = self.api.publish(&record) {
+        eprintln!("failed to publish blower mismatch fault: {err}");
+    }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    /// Components wire this during init and hold on to the `Reporter`.
+#[test]
+fn test_hvac_faults_with_dummy_app() {
     // FaultApi owns the sink/logger/catalog. Arc makes cloning cheap for async closures.
     let api = FaultApi::new(
         Arc::new(VehicleBusSink),
         Arc::new(StdoutLogHook),
-        Arc::new(HVAC_CATALOG.clone()),
     );
 
     // ReporterConfig carries static identity for this ECU/component plus any default metadata.
@@ -116,31 +158,15 @@ fn init_hvac_faults() -> Reporter {
         }],
     };
 
-    api.reporter(reporter_cfg)
+    let reporter = Reporter::new(
+        reporter_cfg,
+        Arc::new(HVAC_CATALOG.clone())
+    );
+
+    let dummy_app =  DummyApp::new(api, reporter);
+
+    dummy_app.step();
 }
 
-/// Somewhere in the control loop we can raise faults using the reporter.
-#[allow(dead_code)]
-// `async` because publishing may involve I/O; Rust futures make it cheap to await.
-fn handle_blower_fault(reporter: &Reporter, measured_rpm: f32, commanded_rpm: f32) {
-    // Look up the descriptor we registered earlier. Real code would likely keep
-    // a direct reference instead of searching each time.
-    let record: FaultRecord = FaultRecord::new(reporter, &FaultId::Text("hvac.blower.speed_senso"))
-        .with_severity(None)
-        .with_metadata("measured_rpm", measured_rpm.to_string())
-        .with_metadata("commanded_rpm", commanded_rpm.to_string())
-        .with_debounce(None)
-        .with_reset(None);
-
-    // The reporter logs locally, tags the record with catalog/version,
-    // and hands it off to the sink for transport.
-    if let Err(err) = reporter.report(&record) {
-        eprintln!("failed to publish blower mismatch fault: {err}");
-    }
 }
 
-#[test]
-fn test_handle_blower_fault() {
-    let reporter = init_hvac_faults();
-    handle_blower_fault(&reporter, 0.6, 0.9);
-}

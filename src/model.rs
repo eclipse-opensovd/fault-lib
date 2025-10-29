@@ -99,7 +99,6 @@ pub struct FaultRecord {
 impl FaultRecord {
     pub fn new(reporter: &Reporter, descriptor_key: &FaultId) -> Self {
         let descriptor = reporter
-            .api()
             .catalog()
             .find(descriptor_key)
             .expect("descriptor must exist in catalog");
@@ -110,8 +109,8 @@ impl FaultRecord {
             source: reporter.cfg().source.clone(),
             lifecycle_phase: reporter.cfg().lifecycle_phase,
             metadata: reporter.cfg().default_meta.clone(),
-            catalog_id: reporter.api().catalog().id,
-            catalog_version: reporter.api().catalog().version,
+            catalog_id: reporter.catalog().id,
+            catalog_version: reporter.catalog().version,
             compliance: descriptor.compliance.to_vec(),
             effective_debounce: descriptor.debounce.clone(),
             effective_reset: descriptor.reset.clone(),

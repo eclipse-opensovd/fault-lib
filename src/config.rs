@@ -47,6 +47,7 @@ pub struct ReporterConfig {
 
 // Per-report options provided by the call site when a fault is emitted.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct ReportOptions {
     /// Override severity (else descriptor.default_severity).
     pub severity: Option<crate::model::FaultSeverity>,
@@ -59,14 +60,3 @@ pub struct ReportOptions {
     pub extra_compliance: Vec<crate::model::ComplianceTag>,
 }
 
-impl Default for ReportOptions {
-    fn default() -> Self {
-        Self {
-            severity: None,
-            metadata: vec![],
-            debounce: None,
-            reset: None,
-            extra_compliance: vec![],
-        }
-    }
-}
