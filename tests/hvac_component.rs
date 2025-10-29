@@ -12,9 +12,7 @@ use fault_lib::{
     FaultRecord, Reporter,
     api::FaultApi,
     catalog::FaultCatalog,
-    config::{
-        DebounceMode, DebouncePolicy, ReporterConfig, ResetPolicy, ResetTrigger,
-    },
+    config::{DebounceMode, DebouncePolicy, ReporterConfig, ResetPolicy, ResetTrigger},
     fault_descriptor,
     ids::{FaultId, SourceId},
     model::{ComplianceTag, FaultSeverity, FaultType, KeyValue, LifecyclePhase},
@@ -91,17 +89,14 @@ impl FaultSink for VehicleBusSink {
     }
 }
 
-struct DummyApp{
+struct DummyApp {
     api: FaultApi,
     reporter: Reporter,
 }
 
 impl DummyApp {
-    pub fn new(api: FaultApi, reporter: Reporter) -> Self{
-        Self {
-            api,
-            reporter
-        }
+    pub fn new(api: FaultApi, reporter: Reporter) -> Self {
+        Self { api, reporter }
     }
 
     pub fn step(&self) {
@@ -112,61 +107,55 @@ impl DummyApp {
     #[allow(dead_code)]
     // `async` because publishing may involve I/O; Rust futures make it cheap to await.
     fn handle_blower_fault(&self, measured_rpm: f32, commanded_rpm: f32) {
-            // Look up the descriptor we registered earlier. Real code would likely keep
-    // a direct reference instead of searching each time.
-    let record: FaultRecord = FaultRecord::new(&self.reporter, &FaultId::Text("hvac.blower.speed_sensor_mismatch"))
+        // Look up the descriptor we registered earlier. Real code would likely keep
+        // a direct reference instead of searching each time.
+        let record: FaultRecord = FaultRecord::new(
+            &self.reporter,
+            &FaultId::Text("hvac.blower.speed_sensor_mismatch"),
+        )
         .with_severity(None)
         .with_metadata("measured_rpm", measured_rpm.to_string())
         .with_metadata("commanded_rpm", commanded_rpm.to_string())
         .with_debounce(None)
         .with_reset(None);
 
-    // The reporter logs locally, tags the record with catalog/version,
-    // and hands it off to the sink for transport.
-    if let Err(err) = self.api.publish(&record) {
-        eprintln!("failed to publish blower mismatch fault: {err}");
-    }
+        // The reporter logs locally, tags the record with catalog/version,
+        // and hands it off to the sink for transport.
+        if let Err(err) = self.api.publish(&record) {
+            eprintln!("failed to publish blower mismatch fault: {err}");
+        }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
     /// Components wire this during init and hold on to the `Reporter`.
-#[test]
-fn test_hvac_faults_with_dummy_app() {
-    // FaultApi owns the sink/logger/catalog. Arc makes cloning cheap for async closures.
-    let api = FaultApi::new(
-        Arc::new(VehicleBusSink),
-        Arc::new(StdoutLogHook),
-    );
+    #[test]
+    fn test_hvac_faults_with_dummy_app() {
+        // FaultApi owns the sink/logger/catalog. Arc makes cloning cheap for async closures.
+        let api = FaultApi::new(Arc::new(VehicleBusSink), Arc::new(StdoutLogHook));
 
-    // ReporterConfig carries static identity for this ECU/component plus any default metadata.
-    let reporter_cfg = ReporterConfig {
-        source: SourceId {
-            entity: "HVAC.Controller",
-            ecu: Some("CCU-SoC-A"),
-            domain: Some("HVAC"),
-            sw_component: Some("ClimateManager"),
-            instance: None,
-        },
-        lifecycle_phase: LifecyclePhase::Running,
-        default_meta: vec![KeyValue {
-            key: "sw.version",
-            value: "2024.10.0".into(),
-        }],
-    };
+        // ReporterConfig carries static identity for this ECU/component plus any default metadata.
+        let reporter_cfg = ReporterConfig {
+            source: SourceId {
+                entity: "HVAC.Controller",
+                ecu: Some("CCU-SoC-A"),
+                domain: Some("HVAC"),
+                sw_component: Some("ClimateManager"),
+                instance: None,
+            },
+            lifecycle_phase: LifecyclePhase::Running,
+            default_meta: vec![KeyValue {
+                key: "sw.version",
+                value: "2024.10.0".into(),
+            }],
+        };
 
-    let reporter = Reporter::new(
-        reporter_cfg,
-        Arc::new(HVAC_CATALOG.clone())
-    );
+        let reporter = Reporter::new(reporter_cfg, Arc::new(HVAC_CATALOG.clone()));
 
-    let dummy_app =  DummyApp::new(api, reporter);
+        let dummy_app = DummyApp::new(api, reporter);
 
-    dummy_app.step();
+        dummy_app.step();
+    }
 }
-
-}
-

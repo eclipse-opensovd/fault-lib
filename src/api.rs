@@ -15,14 +15,8 @@ pub struct FaultApi {
 
 impl FaultApi {
     // Callers construct this once at bootstrap and share it across tasks.
-    pub fn new(
-        sink: Arc<dyn FaultSink>,
-        logger: Arc<dyn LogHook>,
-    ) -> Self {
-        Self {
-            sink,
-            logger,
-        }
+    pub fn new(sink: Arc<dyn FaultSink>, logger: Arc<dyn LogHook>) -> Self {
+        Self { sink, logger }
     }
 
     /// Report an occurrence of a fault. Always logs via LogHook, then publishes via sink.
@@ -39,17 +33,14 @@ impl FaultApi {
 /// What callers hold and clone in their components.
 #[derive(Clone)]
 // Reporter carries the static config for a particular component or ECU.
-pub struct Reporter { 
+pub struct Reporter {
     cfg: ReporterConfig,
     catalog: Arc<FaultCatalog>,
 }
 
 impl Reporter {
     pub fn new(cfg: ReporterConfig, catalog: Arc<FaultCatalog>) -> Self {
-        Self {
-            cfg,
-            catalog,
-        }
+        Self { cfg, catalog }
     }
     pub fn cfg(&self) -> &ReporterConfig {
         &self.cfg
