@@ -20,6 +20,10 @@ The high-level design of OpenSOVD can be found here: [OpenSOVD Design](https://g
 - Also needs to enforce regulatory requirements for certain faults - e.g. emission relevant.
 - Need to include: lifecycle stages, severity analog DLT levels, reset policy (e.g. power cycles), debounce policy, source identifyiers (entity, ecu, etc)
 - Decentral component.
+- The debouncing should be in the fault lib to reduce the traffic on the IPC.
+- fault caching if IPC to DFM should not respond, with retry.
+- support sync and async.
+- Components must be able to create a fault-specific handle that binds the descriptor once and exposes simple raise/clear calls without passing the descriptor each time.
 
 ## Architecture Overview
 
