@@ -46,7 +46,7 @@ flowchart LR
     Catalog -. build artifacts .-> F
     E -->|IPC / transport| F[Diagnostic Fault Manager]
 ```
-
+Use Case Diagram
 ```mermaid
 flowchart LR
   rA["👤 << actor>>
@@ -71,11 +71,12 @@ flowchart LR
     end
   end
 
-rA --> |requests Diagnostics from| rB
-rB --> |send Diagnostics to| rA
-rC --> |publishes Faults to| rE
-rE --> |publishes managed Faults to | rB
-rD --> |reports Faults to| rC
+rA --> |diagnostic request | rB
+rB --> |diagnostic respone | rA
+rC --> |publishes faults to| rE
+rB --> |requests DTCs from | rE
+rE --> |sends DTCs to | rB
+rD --> |reports faults to| rC
 
   classDef role stroke-width:0px;
 ```
