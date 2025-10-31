@@ -29,28 +29,65 @@ The high-level design of OpenSOVD can be found here: [OpenSOVD Design](https://g
 
 ```mermaid
 flowchart LR
-    subgraph Callers
-        A[App / Platform Component]
-        A --> B
+    subgraph Application
+        A["FaultAPI 
+        << instance>>"]:::role
+        B["Reporter 
+        << instance>>"]
+        C[FaultRecord]
+        B --> |creates| C
+        C --> |published by| A
     end
     subgraph FaultLibrary[Fault Library]
-        B[Reporter]
-        C[FaultApi]
-        B -->|report| C
-        C -->|log| D[LogHook]
-        C -->|publish| E[FaultSink impl]
+        FaultAPI
+        Reporter
+        A -->|log| G[LogHook]
+        A -->|publish| E[FaultSink impl]
     end
     Config[ReporterConfig] --> B
-    Options[ReportOptions] --> B
     Catalog[FaultCatalog: <br> id, version, descriptors] --> B
-    Catalog --> C
+
     Catalog -. build artifacts .-> F
     E -->|IPC / transport| F[Diagnostic Fault Manager]
+```
+Use Case Diagram
+```mermaid
+flowchart LR
+  rA["👤 << actor>>
+  Diagnostic user"]:::role
+
+  subgraph Onboard
+    subgraph Middleware Layer
+      rB["<< service>>
+      Diagnostic service"]:::role
+
+      rE["<< service>>
+      Diagnostic Fault manager"]:::role
+      
+    end
+
+    subgraph Application Layer
+      rC["<< instance>>
+      Fault Library"]:::role
+
+      rD["<< application>>
+      Onboard application"]:::role
+    end
+  end
+
+rA --> |diagnostic request | rB
+rB --> |diagnostic respone | rA
+rC --> |publishes faults to| rE
+rB --> |requests DTCs from | rE
+rE --> |sends DTCs to | rB
+rD --> |reports faults to| rC
+
+  classDef role stroke-width:0px;
 ```
 
 ## Rust API Draft
 
-An example can be found here: [Example Component](../examples/hvac_component.rs)
+An example can be found here: [Example Component](../../tests/hvac_component.rs)
 
 This is the shape we’re aiming for:
 
