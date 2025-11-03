@@ -50,7 +50,9 @@ flowchart LR
     Catalog -. build artifacts .-> F
     E -->|IPC / transport| F[Diagnostic Fault Manager]
 ```
+
 Use Case Diagram
+
 ```mermaid
 flowchart LR
   rA["👤 << actor>>
@@ -89,20 +91,20 @@ rD --> |reports faults to| rC
 
 An example can be found here: [Example Component](../../tests/hvac_component.rs)
 
-This is the shape we’re aiming for:
+Here’s how a component ends up talking to the library:
 
-- `FaultDescriptor` describes a fault once - ID, severity default, compliance flags, debounce/reset policy. Teams define these at build time and feed the same catalog to the DFM.
-- `FaultCatalog` wraps that descriptor slice with an identifier and version so the DFM can sanity-check what each component is using.
-- `FaultApi` owns a sink, a logger, and the catalog; `FaultApi::reporter` hands callers a cheap `Reporter` struct bound to their source metadata.
-- `Reporter::report` merges descriptor defaults with any `ReportOptions` overrides, logs locally, and forwards the full picture (catalog id/version, effective policy decisions, merged compliance tags) to the sink. The sink’s only job is to get that payload to the DFM.
-- Everything stays `Send + Sync` with no runtime dependencies, so the API fits anywhere from async executors to bare `no_std` targets once we feature-gate hooks (e.g. logging).
+1. Define a handful of `FaultDescriptor`s (the `fault_descriptor!` macro keeps them readable) and park them inside a `'static` `FaultCatalog { id, version, descriptors }`. Ship the same slice with the ECU and the DFM so they agree on policy.
+2. Spin up a `FaultApi` with an `Arc<dyn FaultSink>` that knows how to reach the DFM and an `Arc<dyn LogHook>` that mirrors events into your logging stack.
+3. Create a `Reporter` via `Reporter::new(ReporterConfig, Arc<FaultCatalog>)`. The config defines `SourceId`, lifecycle phase, and any default metadata; the catalog gives you descriptor lookups.
+4. When something misbehaves, call `FaultRecord::new(&reporter, &FaultId)` to pull in the descriptor. Use the builder helpers—`.with_severity`, `.with_metadata`, `.with_debounce`, `.with_reset`, `.with_extra_compliance`—to tweak the record for that incident.
+5. Hand the record to `FaultApi::publish(&record)`. It logs first, then pushes the payload through the sink and returns a `Result<(), SinkError>` so callers can react to transport failures.
 
-Practically, reporters are what components keep around; sinks are pluggable (e.g. S-CORE IPC); catalogs let tooling generate the same manifest for both sides, and the DFM remains the single place where debounce/reset evaluation happens.
+Each `FaultRecord` carries the descriptor snapshot, catalog id/version, effective policies, merged compliance tags, and any metadata the DFM needs. The whole stack stays `Send + Sync` with zero external dependencies, so it fits into async executors or bare tasks. We expect to add a convenience layer around `ReportOptions` once more components start using it.
 
 ## Design Decisions & Trade-offs
 
-- **Catalog-driven manifests:** Fault identities and policies live in a build-time catalog instead of runtime registration. This keeps the ECU and DFM in sync and is easy to audit, but it means need of tooling to regenerate catalogs whenever descriptors change.
-- **Declarative policies (no custom code hooks):** Components describe debounce/reset behaviour via enums and structs. That keeps the transport payload simple and lets the DFM enforce rules uniformly, at the cost of delaying support for custom logic.
-- **Reporter-side metadata merge:** Each reporter starts with metadata defined in `ReporterConfig` (static keys like software version). Whenever `report()` is called, any extra key/value pairs supplied in `ReportOptions` get appended to that list, and the merged set is logged and forwarded. It means components can add per-event details on the fly, but they also have to keep an eye on payload size and consistent formatting.
-- **Catalog version tagging in every record:** Each report carries `{catalog_id, catalog_version}` so the DFM can reject stale components. The extra bytes add overhead, but they make roll-back/roll-forward checks trivial.
-- **Optional sink/log implementations:** No opinions on IPC or logging - must be integrated later.
+- **Static catalogs:** Descriptors live in `'static` slices wrapped by `FaultCatalog`. It matches how DTC catalogs are shipped today and makes ECU↔DFM compatibility checks easy, but you do need tooling that can regenerate code whenever the catalog changes.
+- **Self-contained records:** `FaultRecord::new` clones the descriptor so every record is safe to queue, persist, or retry. The trade-off is a bit of extra copy/alloc cost if descriptors grow large.
+- **Synchronous publish path:** `FaultApi::publish` always logs first, then calls the sink on the same thread. Control loops stay simple, yet any sink that blocks on I/O will want to hand work to another task or future.
+- **Declarative policies:** Debounce and reset logic ride on enums (`DebounceMode`, `ResetTrigger`). The DFM can enforce them consistently, but custom one-off algorithms need new variants or a different layer.
+- **Panic on missing descriptors:** If a caller asks for a fault that isn’t in the catalog we `expect(...)` and crash. That flushes out drift early, so production flows should generate the catalog and component code together.
