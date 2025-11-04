@@ -13,7 +13,7 @@
 
 use crate::FaultId;
 use crate::{DebouncePolicy, Reporter};
-use std::time::SystemTime;
+use std::{borrow::Cow, time::SystemTime};
 
 // Shared domain types that move between reporters, sinks, and integrators.
 
@@ -63,10 +63,12 @@ pub enum LifecyclePhase {
 /// State of a fault’s lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FaultLifecycleStage {
-    Raised,  // newly observed; debounce may still be in progress
-    Active,  // confirmed and visible to the system/user
-    Latched, // sticky until reset policy conditions met
-    Cleared, // condition gone; record maintained per policy
+    NotSet,           // descriptor exists but underlying test not executed yet
+    Raised,           // newly observed; debounce may still be in progress
+    Active,           // diagnostic test ran and confirmed the fault
+    Latched,          // sticky until reset policy conditions met
+    Cleared,          // condition gone; record maintained per policy
+    TestedAndPassed,  // test executed and passed; no active fault
 }
 
 /// Minimal, typed metadata; keep serde-agnostic at the API edge.
@@ -81,16 +83,16 @@ pub struct KeyValue {
 #[derive(Debug, Clone)]
 pub struct FaultDescriptor {
     pub id: crate::ids::FaultId,
-    pub name: &'static str,
+    pub name: Cow<'static, str>,
     pub fault_type: FaultType,
     pub default_severity: FaultSeverity,
-    pub compliance: &'static [ComplianceTag],
+    pub compliance: Cow<'static, [ComplianceTag]>,
     /// Default debounce/reset; can be overridden per-report via ReportOptions.
     pub debounce: Option<crate::config::DebouncePolicy>,
     pub reset: Option<crate::config::ResetPolicy>,
     /// Human-facing details.
-    pub summary: Option<&'static str>,
-    pub docs_url: Option<&'static str>,
+    pub summary: Option<Cow<'static, str>>,
+    pub docs_url: Option<Cow<'static, str>>,
 }
 
 /// Concrete record produced on each report() call, also logged.
@@ -101,8 +103,9 @@ pub struct FaultRecord {
     pub severity: FaultSeverity,
     pub source: crate::ids::SourceId,
     pub lifecycle_phase: LifecyclePhase,
+    pub stage: FaultLifecycleStage,
     pub metadata: Vec<KeyValue>,
-    pub catalog_id: &'static str,
+    pub catalog_id: Cow<'static, str>,
     pub catalog_version: u64,
     pub compliance: Vec<ComplianceTag>,
     pub effective_debounce: Option<crate::config::DebouncePolicy>,
@@ -121,8 +124,9 @@ impl FaultRecord {
             severity: descriptor.default_severity,
             source: reporter.cfg().source.clone(),
             lifecycle_phase: reporter.cfg().lifecycle_phase,
+            stage: FaultLifecycleStage::Raised,
             metadata: reporter.cfg().default_meta.clone(),
-            catalog_id: reporter.catalog().id,
+            catalog_id: reporter.catalog().id.clone(),
             catalog_version: reporter.catalog().version,
             compliance: descriptor.compliance.to_vec(),
             effective_debounce: descriptor.debounce.clone(),
@@ -144,6 +148,11 @@ impl FaultRecord {
     pub fn with_metadata(self, key: &'static str, value: String) -> Self {
         let mut req = self;
         req.metadata.push(KeyValue { key, value });
+        req
+    }
+    pub fn with_stage(self, stage: FaultLifecycleStage) -> Self {
+        let mut req = self;
+        req.stage = stage;
         req
     }
     pub fn with_reset(self, reset: Option<crate::ResetPolicy>) -> Self {

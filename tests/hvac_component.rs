@@ -28,7 +28,9 @@ use fault_lib::{
     config::{DebounceMode, DebouncePolicy, ReporterConfig, ResetPolicy, ResetTrigger},
     fault_descriptor,
     ids::{FaultId, SourceId},
-    model::{ComplianceTag, FaultSeverity, FaultType, KeyValue, LifecyclePhase},
+    model::{
+        ComplianceTag, FaultLifecycleStage, FaultSeverity, FaultType, KeyValue, LifecyclePhase,
+    },
     sink::{FaultSink, LogHook, SinkError},
 };
 
@@ -54,7 +56,7 @@ static HVAC_DESCRIPTORS: &[fault_lib::model::FaultDescriptor] = &[
         }
     },
     fault_descriptor! {
-        id = FaultId::Text("hvac.blower.speed_sensor_mismatch"),
+        id = FaultId::text_const("hvac.blower.speed_sensor_mismatch"),
         name = "BlowerSpeedMismatch",
         kind = FaultType::Communication,
         severity = FaultSeverity::Error,
@@ -124,13 +126,14 @@ impl DummyApp {
         // a direct reference instead of searching each time.
         let record: FaultRecord = FaultRecord::new(
             &self.reporter,
-            &FaultId::Text("hvac.blower.speed_sensor_mismatch"),
+            &FaultId::text("hvac.blower.speed_sensor_mismatch"),
         )
         .with_severity(None)
         .with_metadata("measured_rpm", measured_rpm.to_string())
         .with_metadata("commanded_rpm", commanded_rpm.to_string())
         .with_debounce(None)
-        .with_reset(None);
+        .with_reset(None)
+        .with_stage(FaultLifecycleStage::Active);
 
         // The reporter logs locally, tags the record with catalog/version,
         // and hands it off to the sink for transport.

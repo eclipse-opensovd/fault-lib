@@ -13,6 +13,17 @@
 
 // Small macro helpers that keep descriptor definitions tidy in user code.
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __fault_descriptor_optional_str {
+    () => {
+        None
+    };
+    ($value:literal) => {
+        Some(::std::borrow::Cow::Borrowed($value))
+    };
+}
+
 #[macro_export]
 macro_rules! fault_descriptor {
     // Minimal form; policies can be added via builder functions if desired.
@@ -29,14 +40,14 @@ macro_rules! fault_descriptor {
     ) => {{
         $crate::model::FaultDescriptor {
             id: $id,
-            name: $name,
+            name: ::std::borrow::Cow::Borrowed($name),
             fault_type: $kind,
             default_severity: $sev,
-            compliance: &[$($($ctag),*,)?],
+            compliance: ::std::borrow::Cow::Borrowed(&[$($($ctag),*,)?]),
             debounce: $(Some($debounce))?,
             reset: $(Some($reset))?,
-            summary: $(Some($summary))?,
-            docs_url: $(Some($docs))?,
+            summary: $crate::__fault_descriptor_optional_str!($($summary)?),
+            docs_url: $crate::__fault_descriptor_optional_str!($($docs)?),
         }
     }};
 }

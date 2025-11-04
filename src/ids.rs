@@ -11,15 +11,27 @@
 * SPDX-License-Identifier: Apache-2.0
 */
 
-use std::fmt;
+use std::{borrow::Cow, fmt};
 
 // Lightweight identifiers that keep fault attribution consistent across the fleet.
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FaultId {
-    Numeric(u32),       // e.g., DTC-like
-    Text(&'static str), // human-stable symbolic ID
-    Uuid([u8; 16]),     // global uniqueness if needed
+    Numeric(u32),                 // e.g., DTC-like
+    Text(Cow<'static, str>),      // human-stable symbolic ID (runtime or static)
+    Uuid([u8; 16]),               // global uniqueness if needed
+}
+
+impl FaultId {
+    /// Convenience for constructing a textual ID from either a static string or owned `String`.
+    pub fn text(value: impl Into<Cow<'static, str>>) -> Self {
+        Self::Text(value.into())
+    }
+
+    /// `const` helper so descriptors can be defined in static contexts.
+    pub const fn text_const(value: &'static str) -> Self {
+        Self::Text(Cow::Borrowed(value))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

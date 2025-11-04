@@ -12,13 +12,14 @@
 */
 
 use crate::{ids::FaultId, model::FaultDescriptor};
+use std::borrow::Cow;
 
 /// Declarative catalog shared between reporters and the Diagnostic Fault Manager.
 #[derive(Clone, Debug)]
 pub struct FaultCatalog {
-    pub id: &'static str,
+    pub id: Cow<'static, str>,
     pub version: u64,
-    pub descriptors: &'static [FaultDescriptor],
+    pub descriptors: Cow<'static, [FaultDescriptor]>,
 }
 
 impl FaultCatalog {
@@ -28,9 +29,23 @@ impl FaultCatalog {
         descriptors: &'static [FaultDescriptor],
     ) -> Self {
         Self {
-            id,
+            id: Cow::Borrowed(id),
             version,
-            descriptors,
+            descriptors: Cow::Borrowed(descriptors),
+        }
+    }
+
+    /// When the DFM deserializes a JSON/YAML catalog at startup, this helper
+    /// lets it hand the owned data back to the library without rebuilding.
+    pub fn from_config(
+        id: impl Into<Cow<'static, str>>,
+        version: u64,
+        descriptors: Vec<FaultDescriptor>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            version,
+            descriptors: Cow::Owned(descriptors),
         }
     }
 

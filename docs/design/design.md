@@ -63,7 +63,7 @@ flowchart LR
     Config[ReporterConfig] --> B
     Catalog[FaultCatalog: <br> id, version, descriptors] --> B
 
-    Catalog -. build artifacts .-> F
+    Catalog -. configuration .-> F
     E -->|IPC / transport| F[Diagnostic Fault Manager]
 ```
 
@@ -109,18 +109,19 @@ An example can be found here: [Example Component](../../tests/hvac_component.rs)
 
 Here’s how a component ends up talking to the library:
 
-1. Define a handful of `FaultDescriptor`s (the `fault_descriptor!` macro keeps them readable) and park them inside a `'static` `FaultCatalog { id, version, descriptors }`. Ship the same slice with the ECU and the DFM so they agree on policy.
+1. Define a handful of `FaultDescriptor`s (the `fault_descriptor!` macro keeps them readable) and park them inside a `'static` `FaultCatalog { id, version, descriptors }`. Components still embed that slice at build time, while the DFM loads the same artifact through `FaultCatalog::from_config` so updates land via JSON/YAML config instead of rebuilding the manager.
 2. Spin up a `FaultApi` with an `Arc<dyn FaultSink>` that knows how to reach the DFM and an `Arc<dyn LogHook>` that mirrors events into your logging stack.
 3. Create a `Reporter` via `Reporter::new(ReporterConfig, Arc<FaultCatalog>)`. The config defines `SourceId`, lifecycle phase, and any default metadata; the catalog gives you descriptor lookups.
-4. When something misbehaves, call `FaultRecord::new(&reporter, &FaultId)` to pull in the descriptor. Use the builder helpers—`.with_severity`, `.with_metadata`, `.with_debounce`, `.with_reset`, `.with_extra_compliance`—to tweak the record for that incident.
+4. When something misbehaves, call `FaultRecord::new(&reporter, &FaultId)` to pull in the descriptor. Use the builder helpers—`.with_severity`, `.with_metadata`, `.with_debounce`, `.with_reset`, `.with_extra_compliance`, `.with_stage`—to tweak the record for that incident and set the lifecycle state (`Active`, `NotSet`, `TestedAndPassed`, etc.).
 5. Hand the record to `FaultApi::publish(&record)`. It logs first, then pushes the payload through the sink and returns a `Result<(), SinkError>` so callers can react to transport failures.
 
-Each `FaultRecord` carries the descriptor snapshot, catalog id/version, effective policies, merged compliance tags, and any metadata the DFM needs. The whole stack stays `Send + Sync` with zero external dependencies, so it fits into async executors or bare tasks. We expect to add a convenience layer around `ReportOptions` once more components start using it.
+Each `FaultRecord` carries the descriptor snapshot, catalog id/version, effective policies, merged compliance tags, the chosen lifecycle stage, and any metadata the DFM needs. The whole stack stays `Send + Sync` with zero external dependencies, so it fits into async executors or bare tasks. We expect to add a convenience layer around `ReportOptions` once more components start using it.
 
 ## Design Decisions & Trade-offs
 
-- **Static catalogs:** Descriptors live in `'static` slices wrapped by `FaultCatalog`. It matches how DTC catalogs are shipped today and makes ECU↔DFM compatibility checks easy, but you do need tooling that can regenerate code whenever the catalog changes.
+- **Static catalogs + runtime config:** Components still ship `'static` descriptors for zero-cost lookup, while the DFM consumes the same artifact via `FaultCatalog::from_config` so policy changes land via JSON/YAML config instead of a rebuild. This keeps deployment fast with only a light runtime copy cost on the DFM side.
 - **Self-contained records:** `FaultRecord::new` clones the descriptor so every record is safe to queue, persist, or retry. The trade-off is a bit of extra copy/alloc cost if descriptors grow large.
+- **Explicit lifecycle states:** `FaultLifecycleStage` now covers `NotSet` through `TestedAndPassed`, so consumers can tell whether a diagnostic test ran even when no fault is active; callers opt in via `FaultRecord::with_stage`.
 - **Synchronous publish path:** `FaultApi::publish` always logs first, then calls the sink on the same thread. Control loops stay simple, yet any sink that blocks on I/O will want to hand work to another task or future.
 - **Declarative policies:** Debounce and reset logic ride on enums (`DebounceMode`, `ResetTrigger`). The DFM can enforce them consistently, but custom one-off algorithms need new variants or a different layer.
 - **Panic on missing descriptors:** If a caller asks for a fault that isn’t in the catalog we `expect(...)` and crash. That flushes out drift early, so production flows should generate the catalog and component code together.
