@@ -95,21 +95,29 @@ pub struct FaultDescriptor {
     pub docs_url: Option<Cow<'static, str>>,
 }
 
+// TODO: enable usecase to validate catalogue match between Fault Lib and DFM at startup -> hash over descriptor + id
+// TODO: one reporter instance per descriptor create by app
+// TODO: faultrecord = data that can change during runtime
+// TODO: faultdescriptor = static data / configuration
+// TODO: need fault ID to create reporter instance
+
 /// Concrete record produced on each report() call, also logged.
 #[derive(Debug, Clone)]
 pub struct FaultRecord {
+    // TODO: add fault id
     pub time: SystemTime,
-    pub descriptor: FaultDescriptor,
-    pub severity: FaultSeverity,
-    pub source: crate::ids::SourceId,
+    pub descriptor: FaultDescriptor, // TODO: dont send as part of fault record
+    pub severity: FaultSeverity, // static
+    pub source: crate::ids::SourceId, // consistency check
     pub lifecycle_phase: LifecyclePhase,
     pub stage: FaultLifecycleStage,
     pub metadata: Vec<KeyValue>,
-    pub catalog_id: Cow<'static, str>,
-    pub catalog_version: u64,
-    pub compliance: Vec<ComplianceTag>,
-    pub effective_debounce: Option<crate::config::DebouncePolicy>,
-    pub effective_reset: Option<crate::config::ResetPolicy>,
+    pub catalog_id: Cow<'static, str>, // static
+    pub catalog_version: u64, // static
+    pub compliance: Vec<ComplianceTag>, // static
+    // TODO: we need debouncing for fault debounce and DTC debounce. ADD one fault_debounce
+    pub effective_debounce: Option<crate::config::DebouncePolicy>, // optional override
+    pub effective_reset: Option<crate::config::ResetPolicy>, // optional override
 }
 
 impl FaultRecord {

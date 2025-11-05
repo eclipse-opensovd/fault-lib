@@ -106,6 +106,7 @@ impl FaultSink for VehicleBusSink {
 
 struct DummyApp {
     api: FaultApi,
+    // TODO: one reporter instance per fault id
     reporter: Reporter,
 }
 
@@ -120,10 +121,12 @@ impl DummyApp {
 
     /// Somewhere in the control loop we can raise faults using the reporter.
     #[allow(dead_code)]
-    // `async` because publishing may involve I/O; Rust futures make it cheap to await.
     fn handle_blower_fault(&self, measured_rpm: f32, commanded_rpm: f32) {
         // Look up the descriptor we registered earlier. Real code would likely keep
         // a direct reference instead of searching each time.
+        // TODO: instantiate a new reporter for this function
+        // TODO: fault record -> update new status of fault record object on function call like below
+        // TODO: reporter is not part of fault record
         let record: FaultRecord = FaultRecord::new(
             &self.reporter,
             &FaultId::text("hvac.blower.speed_sensor_mismatch"),
@@ -135,8 +138,10 @@ impl DummyApp {
         .with_reset(None)
         .with_stage(FaultLifecycleStage::Active);
 
+
         // The reporter logs locally, tags the record with catalog/version,
         // and hands it off to the sink for transport.
+        // TODO: use reporter to publish faultrecord object instead of api directly
         if let Err(err) = self.api.publish(&record) {
             eprintln!("failed to publish blower mismatch fault: {err}");
         }

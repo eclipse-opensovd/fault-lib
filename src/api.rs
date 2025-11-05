@@ -33,6 +33,7 @@ impl FaultApi {
     }
 
     /// Report an occurrence of a fault. Always logs via LogHook, then publishes via sink.
+    /// or in other words: enqueue for sending to DFM. -> result: success/failure of enqueueing.
     #[allow(async_fn_in_trait)]
     pub fn publish(&self, record: &FaultRecord) -> Result<(), crate::sink::SinkError> {
         // 1) Local log.
