@@ -119,19 +119,16 @@ impl DummyApp {
     /// This ensures type safety and avoids runtime lookups.
     /// It also can ensure that catalogue in app and DFM match.
     pub fn new(
-        api: Arc<FaultApi>,
         reporter_cfg: ReporterConfig,
         catalog: &FaultCatalog,
     ) -> Self {
         Self {
             temp_sensor_fault: Reporter::new(
-                Arc::clone(&api),
                 catalog,
                 reporter_cfg.clone(),
                 &FaultId::Numeric(0x7001),
             ),
             blower_fault: Reporter::new(
-                api,
                 catalog,
                 reporter_cfg,
                 &FaultId::text("hvac.blower.speed_sensor_mismatch"),
@@ -172,10 +169,11 @@ mod tests {
     #[test]
     fn test_hvac_faults_with_dummy_app() {
         // 0. Setup: create the global FaultApi (owns sink/logger)
-        let api = Arc::new(FaultApi::new(
+        // Initialize singleton FaultApi (sink + logger registered globally)
+        let _api = FaultApi::new(
             Arc::new(VehicleBusSink),
             Arc::new(StdoutLogHook),
-        ));
+        );
 
         // 1. Setup: create the per-component ReporterConfig
         let reporter_cfg = ReporterConfig {
@@ -194,7 +192,7 @@ mod tests {
         };
 
         // 2. Bind all reporters to their respective fault IDs at startup
-        let dummy_app = DummyApp::new(api, reporter_cfg, &HVAC_CATALOG);
+    let dummy_app = DummyApp::new(reporter_cfg, &HVAC_CATALOG);
 
         // 3. Simulate a control loop step that may raise a fault
         dummy_app.step();

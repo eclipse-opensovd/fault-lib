@@ -16,32 +16,41 @@ use crate::{
     config::ReporterConfig,
     ids::FaultId,
     model::{FaultDescriptor, FaultLifecycleStage, FaultRecord},
-    sink::{FaultSink, LogHook},
+    sink::{FaultSink, LogHook, SinkError},
 };
-use std::{sync::Arc, time::SystemTime};
+use std::{sync::{Arc, OnceLock}, time::SystemTime};
 
-#[derive(Clone)]
-// FaultApi is the long-lived handle that wires a sink and logger together.
-pub struct FaultApi {
-    sink: Arc<dyn FaultSink>,
-    logger: Arc<dyn LogHook>,
-}
+// FaultApi acts as a singleton façade. A component initializes it once and
+// subsequent publishing paths retrieve the sink/logger via global accessors.
+pub struct FaultApi;
+
+static SINK: OnceLock<Arc<dyn FaultSink>> = OnceLock::new();
+static LOGGER: OnceLock<Arc<dyn LogHook>> = OnceLock::new();
 
 impl FaultApi {
-    // Callers construct this once at bootstrap and share it across tasks.
+    /// Initialize the singleton. Safe to call once; subsequent calls are ignored.
     pub fn new(sink: Arc<dyn FaultSink>, logger: Arc<dyn LogHook>) -> Self {
-        Self { sink, logger }
+        let _ = SINK.set(Arc::clone(&sink));
+        let _ = LOGGER.set(Arc::clone(&logger));
+        FaultApi
     }
 
-    /// Report an occurrence of a fault. Always logs via LogHook, then publishes via sink.
-    /// or in other words: enqueue for sending to DFM. -> result: success/failure of enqueueing.
-    #[allow(async_fn_in_trait)]
-    pub fn publish(&self, record: &FaultRecord) -> Result<(), crate::sink::SinkError> {
-        // 1) Local log.
-        self.logger.on_report(record);
+    pub(crate) fn get_sink() -> Arc<dyn FaultSink> {
+        SINK.get()
+            .cloned()
+            .expect("Sink not initialized - call FaultApi::new() before creating reporters")
+    }
 
-        // 2) Ship the record; the sink decides buffering/retry policy.
-        self.sink.publish(record)
+    pub(crate) fn get_logger() -> Arc<dyn LogHook> {
+        LOGGER.get()
+            .cloned()
+            .expect("Logger not initialized - call FaultApi::new() before creating reporters")
+    }
+
+    /// Publish a record: log locally then enqueue via sink. Non-blocking semantics depend on sink impl.
+    pub fn publish(record: &FaultRecord) -> Result<(), SinkError> {
+        FaultApi::get_logger().on_report(record);
+        FaultApi::get_sink().publish(record)
     }
 }
 
@@ -52,14 +61,12 @@ pub struct Reporter {
     fault_id: FaultId,
     descriptor: FaultDescriptor,
     cfg: ReporterConfig,
-    api: Arc<FaultApi>,
 }
 
 impl Reporter {
     /// Create a new Reporter bound to a specific fault ID.
     /// This should be called once per fault during initialization.
     pub fn new(
-        api: Arc<FaultApi>,
         catalog: &FaultCatalog,
         cfg: ReporterConfig,
         fault_id: &FaultId,
@@ -69,12 +76,7 @@ impl Reporter {
             .expect("fault ID must exist in catalog")
             .clone();
 
-        Self {
-            fault_id: fault_id.clone(),
-            descriptor,
-            cfg,
-            api,
-        }
+        Self { fault_id: fault_id.clone(), descriptor, cfg }
     }
 
     /// Create a new fault record for this specific fault.
@@ -97,7 +99,7 @@ impl Reporter {
             &record.fault_id, &self.fault_id,
             "FaultRecord fault_id doesn't match Reporter"
         );
-        self.api.publish(record)
+        FaultApi::publish(record)
     }
 
     /// Convenience: create and return a record with Active stage
