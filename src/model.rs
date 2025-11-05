@@ -12,7 +12,7 @@
 */
 
 use crate::FaultId;
-use crate::{DebouncePolicy, Reporter};
+// use crate::DebouncePolicy;
 use std::{borrow::Cow, time::SystemTime};
 
 // Shared domain types that move between reporters, sinks, and integrators.
@@ -92,85 +92,38 @@ pub struct FaultDescriptor {
     pub reset: Option<crate::config::ResetPolicy>,
     /// Human-facing details.
     pub summary: Option<Cow<'static, str>>,
-    pub docs_url: Option<Cow<'static, str>>,
 }
 
-// TODO: enable usecase to validate catalogue match between Fault Lib and DFM at startup -> hash over descriptor + id
-// TODO: one reporter instance per descriptor create by app
-// TODO: faultrecord = data that can change during runtime
-// TODO: faultdescriptor = static data / configuration
-// TODO: need fault ID to create reporter instance
-
 /// Concrete record produced on each report() call, also logged.
+/// Contains only runtime-mutable data; static configuration lives in FaultDescriptor.
 #[derive(Debug, Clone)]
 pub struct FaultRecord {
-    // TODO: add fault id
+    pub fault_id: FaultId,
     pub time: SystemTime,
-    pub descriptor: FaultDescriptor, // TODO: dont send as part of fault record
-    pub severity: FaultSeverity, // static
-    pub source: crate::ids::SourceId, // consistency check
+    pub severity: FaultSeverity,
+    pub source: crate::ids::SourceId,
     pub lifecycle_phase: LifecyclePhase,
     pub stage: FaultLifecycleStage,
     pub metadata: Vec<KeyValue>,
-    pub catalog_id: Cow<'static, str>, // static
-    pub catalog_version: u64, // static
-    pub compliance: Vec<ComplianceTag>, // static
-    // TODO: we need debouncing for fault debounce and DTC debounce. ADD one fault_debounce
-    pub effective_debounce: Option<crate::config::DebouncePolicy>, // optional override
-    pub effective_reset: Option<crate::config::ResetPolicy>, // optional override
 }
 
 impl FaultRecord {
-    pub fn new(reporter: &Reporter, descriptor_key: &FaultId) -> Self {
-        let descriptor = reporter
-            .catalog()
-            .find(descriptor_key)
-            .expect("descriptor must exist in catalog");
-        Self {
-            time: SystemTime::now(),
-            descriptor: descriptor.clone(),
-            severity: descriptor.default_severity,
-            source: reporter.cfg().source.clone(),
-            lifecycle_phase: reporter.cfg().lifecycle_phase,
-            stage: FaultLifecycleStage::Raised,
-            metadata: reporter.cfg().default_meta.clone(),
-            catalog_id: reporter.catalog().id.clone(),
-            catalog_version: reporter.catalog().version,
-            compliance: descriptor.compliance.to_vec(),
-            effective_debounce: descriptor.debounce.clone(),
-            effective_reset: descriptor.reset.clone(),
-        }
+    /// Update metadata (mutable)
+    pub fn update_metadata(&mut self, key: &'static str, value: String) {
+        self.metadata.push(KeyValue { key, value });
+        self.time = SystemTime::now();
     }
 
-    pub fn with_debounce(self, debounce: Option<DebouncePolicy>) -> Self {
-        let mut req = self;
-        req.effective_debounce = debounce.or_else(|| req.descriptor.debounce.clone());
-        req
+    /// Update lifecycle stage (mutable)
+    pub fn update_stage(&mut self, stage: FaultLifecycleStage) {
+        self.stage = stage;
+        self.time = SystemTime::now();
     }
 
-    pub fn with_extra_compliance(self, extra_compliance: Vec<ComplianceTag>) -> Self {
-        let mut req = self;
-        req.compliance.extend(extra_compliance);
-        req
+    /// Update severity (mutable)
+    pub fn update_severity(&mut self, severity: FaultSeverity) {
+        self.severity = severity;
+        self.time = SystemTime::now();
     }
-    pub fn with_metadata(self, key: &'static str, value: String) -> Self {
-        let mut req = self;
-        req.metadata.push(KeyValue { key, value });
-        req
-    }
-    pub fn with_stage(self, stage: FaultLifecycleStage) -> Self {
-        let mut req = self;
-        req.stage = stage;
-        req
-    }
-    pub fn with_reset(self, reset: Option<crate::ResetPolicy>) -> Self {
-        let mut req = self;
-        req.effective_reset = reset.or_else(|| req.descriptor.reset.clone());
-        req
-    }
-    pub fn with_severity(self, fault_severity: Option<FaultSeverity>) -> Self {
-        let mut req = self;
-        req.severity = fault_severity.unwrap_or(req.descriptor.default_severity);
-        req
-    }
+
 }

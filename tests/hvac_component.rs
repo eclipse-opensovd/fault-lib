@@ -19,14 +19,18 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-// Pull the pieces the component needs: descriptor macro, catalog, policies,
-// IDs, domain models, and the traits for logging/sink integration.
+// --- FAULT-LIB API USAGE PATTERN EXAMPLE ---
+// This test demonstrates the recommended usage pattern for the fault-lib API.
+// 1. Define static fault descriptors and catalog at compile time.
+// 2. At startup, create one Reporter per fault ID (binding config, catalog, and API).
+// 3. At runtime, create a mutable FaultRecord from the bound Reporter, update state, and publish.
+// 4. Only runtime data is sent; static config is referenced via the Reporter.
 use fault_lib::{
-    FaultRecord, Reporter,
-    api::FaultApi,
-    catalog::FaultCatalog,
+    Reporter, // Per-fault binding: one instance per fault ID
+    api::FaultApi, // Global API handle: owns sink and logger
+    catalog::FaultCatalog, // Static catalog of all descriptors
     config::{DebounceMode, DebouncePolicy, ReporterConfig, ResetPolicy, ResetTrigger},
-    fault_descriptor,
+    fault_descriptor, // Macro for concise descriptor definition
     ids::{FaultId, SourceId},
     model::{
         ComplianceTag, FaultLifecycleStage, FaultSeverity, FaultType, KeyValue, LifecyclePhase,
@@ -34,8 +38,8 @@ use fault_lib::{
     sink::{FaultSink, LogHook, SinkError},
 };
 
-/// Catalog slice: in a real code base this could be generated
-/// so the component and DFM stay in sync about IDs and policies.
+/// 1. Define static fault descriptors and catalog at compile time.
+/// In a real code base this could be generated so the component and DFM stay in sync about IDs and policies.
 static HVAC_DESCRIPTORS: &[fault_lib::model::FaultDescriptor] = &[
     // `fault_descriptor!` is a small macro helper that expands to a struct literal.
     fault_descriptor! {
@@ -45,7 +49,6 @@ static HVAC_DESCRIPTORS: &[fault_lib::model::FaultDescriptor] = &[
         severity = FaultSeverity::Warn,
         compliance = [ComplianceTag::SafetyCritical],
         summary = "Cabin temperature sensor delivered the same sample for >60s",
-        docs = "Cabin temperature sensor delivered the same sample for >60s",
         debounce = DebouncePolicy {
             mode: DebounceMode::HoldTime { duration: Duration::from_secs(60) },
             log_throttle: Some(Duration::from_secs(300)),
@@ -62,7 +65,6 @@ static HVAC_DESCRIPTORS: &[fault_lib::model::FaultDescriptor] = &[
         severity = FaultSeverity::Error,
         compliance = [ComplianceTag::EmissionRelevant],
         summary = "Commanded and measured blower speeds diverged beyond tolerance",
-        docs = "Cabin temperature sensor delivered the same sample for >60s",
         debounce = DebouncePolicy {
             mode: DebounceMode::HoldTime { duration: Duration::from_secs(60) },
             log_throttle: Some(Duration::from_secs(300)),
@@ -78,72 +80,87 @@ static HVAC_DESCRIPTORS: &[fault_lib::model::FaultDescriptor] = &[
 static HVAC_CATALOG: FaultCatalog = FaultCatalog::new("hvac", 3, HVAC_DESCRIPTORS);
 
 /// Minimal log hook to keep the example focused on the API touchpoints.
+/// In production, this would forward to a logging backend.
 struct StdoutLogHook;
 
 impl LogHook for StdoutLogHook {
     fn on_report(&self, record: &fault_lib::model::FaultRecord) {
         println!(
-            "[fault-log] {} severity={:?} source={}",
-            record.descriptor.name, record.severity, record.source
+            "[fault-log] fault_id={:?} severity={:?} source={}",
+            record.fault_id, record.severity, record.source
         );
     }
 }
 
-/// Dummy sink used for illustration. Real code would forward to S-CORE IPC.
+/// Dummy sink used for illustration. Real code would forward to S-CORE IPC or another transport.
 struct VehicleBusSink;
 
-#[allow(clippy::unused_async)]
 impl FaultSink for VehicleBusSink {
     // In real deployments this is where we would enqueue into IPC to the central manager.
     fn publish(&self, record: &fault_lib::model::FaultRecord) -> Result<(), SinkError> {
         println!(
-            "[fault-sink] queued {} (catalog={}#{})",
-            record.descriptor.name, record.catalog_id, record.catalog_version
+            "[fault-sink] queued fault_id={:?}",
+            record.fault_id
         );
         Ok(())
     }
 }
 
+/// 2. At startup, create one Reporter per fault ID (binding config, catalog, and API).
+/// Each Reporter is bound to a single fault and holds all static config for that fault.
 struct DummyApp {
-    api: FaultApi,
-    // TODO: one reporter instance per fault id
-    reporter: Reporter,
+    #[allow(dead_code)]
+    temp_sensor_fault: Reporter,
+    blower_fault: Reporter,
 }
 
 impl DummyApp {
-    pub fn new(api: FaultApi, reporter: Reporter) -> Self {
-        Self { api, reporter }
+    /// Bind all reporters to their respective fault IDs at startup.
+    /// This ensures type safety and avoids runtime lookups.
+    /// It also can ensure that catalogue in app and DFM match.
+    pub fn new(
+        api: Arc<FaultApi>,
+        reporter_cfg: ReporterConfig,
+        catalog: &FaultCatalog,
+    ) -> Self {
+        Self {
+            temp_sensor_fault: Reporter::new(
+                Arc::clone(&api),
+                catalog,
+                reporter_cfg.clone(),
+                &FaultId::Numeric(0x7001),
+            ),
+            blower_fault: Reporter::new(
+                api,
+                catalog,
+                reporter_cfg,
+                &FaultId::text("hvac.blower.speed_sensor_mismatch"),
+            ),
+        }
     }
 
+    /// Simulate a control loop step that may raise a fault.
     pub fn step(&self) {
         self.handle_blower_fault(0.6, 0.9);
     }
 
-    /// Somewhere in the control loop we can raise faults using the reporter.
+    /// 3. At runtime, create a mutable FaultRecord from the bound Reporter, update state, and publish.
+    /// This pattern ensures only runtime data is sent; static config is referenced via the Reporter.
     #[allow(dead_code)]
     fn handle_blower_fault(&self, measured_rpm: f32, commanded_rpm: f32) {
-        // Look up the descriptor we registered earlier. Real code would likely keep
-        // a direct reference instead of searching each time.
-        // TODO: instantiate a new reporter for this function
-        // TODO: fault record -> update new status of fault record object on function call like below
-        // TODO: reporter is not part of fault record
-        let record: FaultRecord = FaultRecord::new(
-            &self.reporter,
-            &FaultId::text("hvac.blower.speed_sensor_mismatch"),
-        )
-        .with_severity(None)
-        .with_metadata("measured_rpm", measured_rpm.to_string())
-        .with_metadata("commanded_rpm", commanded_rpm.to_string())
-        .with_debounce(None)
-        .with_reset(None)
-        .with_stage(FaultLifecycleStage::Active);
+        // Create a new record for this fault occurrence
+        let mut record = self.blower_fault.create_record();
+        // Attach runtime metadata
+        record.update_metadata("measured_rpm", measured_rpm.to_string());
+        record.update_metadata("commanded_rpm", commanded_rpm.to_string());
+        // Set the lifecycle stage for this occurrence
+        record.update_stage(FaultLifecycleStage::Active);
 
-
-        // The reporter logs locally, tags the record with catalog/version,
-        // and hands it off to the sink for transport.
-        // TODO: use reporter to publish faultrecord object instead of api directly
-        if let Err(err) = self.api.publish(&record) {
-            eprintln!("failed to publish blower mismatch fault: {err}");
+        // Publish the record via the bound reporter.
+        // This enqueues the record to the configured FaultSink (IPC)
+        // and is non-blocking for the caller (does not wait for DFM response).
+        if let Err(err) = self.blower_fault.publish(&record) {
+            eprintln!("failed to enqueue blower mismatch fault: {err}");
         }
     }
 }
@@ -154,10 +171,13 @@ mod tests {
     /// Components wire this during init and hold on to the `Reporter`.
     #[test]
     fn test_hvac_faults_with_dummy_app() {
-        // FaultApi owns the sink/logger/catalog. Arc makes cloning cheap for async closures.
-        let api = FaultApi::new(Arc::new(VehicleBusSink), Arc::new(StdoutLogHook));
+        // 0. Setup: create the global FaultApi (owns sink/logger)
+        let api = Arc::new(FaultApi::new(
+            Arc::new(VehicleBusSink),
+            Arc::new(StdoutLogHook),
+        ));
 
-        // ReporterConfig carries static identity for this ECU/component plus any default metadata.
+        // 1. Setup: create the per-component ReporterConfig
         let reporter_cfg = ReporterConfig {
             source: SourceId {
                 entity: "HVAC.Controller",
@@ -173,10 +193,10 @@ mod tests {
             }],
         };
 
-        let reporter = Reporter::new(reporter_cfg, Arc::new(HVAC_CATALOG.clone()));
+        // 2. Bind all reporters to their respective fault IDs at startup
+        let dummy_app = DummyApp::new(api, reporter_cfg, &HVAC_CATALOG);
 
-        let dummy_app = DummyApp::new(api, reporter);
-
+        // 3. Simulate a control loop step that may raise a fault
         dummy_app.step();
     }
 }

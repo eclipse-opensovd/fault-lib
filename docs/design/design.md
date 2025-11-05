@@ -43,31 +43,46 @@ The high-level design of OpenSOVD can be found here: [OpenSOVD Design](https://g
 
 ## Architecture Overview
 
+Three main design goals:
+
+1. Decentral catalogue definition
+2. No need to redeploy DFM if application changes
+3. Fault lib shall never block an application
+
+### Overview
+
 ```mermaid
 flowchart LR
-    subgraph Application
-        A["FaultAPI 
-        << instance>>"]:::role
-        B["Reporter 
-        << instance>>"]
-        C[FaultRecord]
-        B --> |creates| C
-        C --> |published by| A
-    end
-    subgraph FaultLibrary[Fault Library]
-        FaultAPI
-        Reporter
-        A -->|log| G[LogHook]
-        A -->|publish| E[FaultSink impl]
-    end
-    Config[ReporterConfig] --> B
-    Catalog[FaultCatalog: <br> id, version, descriptors] --> B
+  subgraph fault_lib_crate["fault-lib"]
+    FaultApi["FaultApi singleton handle"]
+    Reporter["Reporter per-fault handle"]
+    FaultDescriptor["FaultDescriptor static config"]
+    FaultRecord["FaultRecord runtime data"]
+    LogHook["LogHook trait"]
+    FaultSink["FaultSink trait"]
+    FaultCatalog["FaultCatalog id version descriptors"]
+    ECU_FaultCatalogue["ECU_FaultCatalogue - sum of all AppCatalogues"]
+  end
 
-    Catalog -. configuration .-> F
-    E -->|IPC / transport| F[Diagnostic Fault Manager]
+  subgraph application_code["Application / Component"]
+    ComponentLogic["Component logic"]
+  end
+
+  ComponentLogic --> Reporter
+  FaultCatalog --> FaultDescriptor
+  FaultDescriptor --> Reporter
+  Reporter --> FaultRecord
+  Reporter -->|publish enqueue| FaultApi
+  FaultApi --> LogHook
+  FaultApi --> FaultSink
+  FaultSink -->|IPC transport| DFM["Diagnostic Fault Manager external"]
+  ECU_FaultCatalogue -->|configuration| DFM
+  FaultCatalog -. defines schema .-> FaultRecord
+
+  style DFM stroke:#d33,stroke-width:2px
 ```
 
-Use Case Diagram
+### Use-case
 
 ```mermaid
 flowchart LR
@@ -103,6 +118,32 @@ rD --> |reports faults to| rC
   classDef role stroke-width:0px;
 ```
 
+### Sequence
+
+```mermaid
+sequenceDiagram
+    participant App as Application
+    participant Reporter as Reporter
+    participant FaultApi as FaultApi
+    participant Sink as FaultSink
+    participant DFM as Diagnostic Fault Manager
+
+    Note over App,Reporter: Startup: Bind Reporter per fault
+    App->>Reporter: new with catalog & fault_id
+    App->>Reporter: create_record
+    Reporter-->>App: FaultRecord
+    
+    Note over App,DFM: Runtime: Detect and Report Fault
+    App->>App: update metadata & stage
+    App->>Reporter: publish
+    Reporter->>FaultApi: publish
+    FaultApi->>FaultApi: log via log-sink
+    FaultApi->>Sink: enqueue non-blocking
+    Sink-->>FaultApi: Result
+    Sink--)DFM: send to DFM via IPC
+    Note right of DFM: Debounce & policies
+```
+
 ## Rust API Draft
 
 An example can be found here: [Example Component](../../tests/hvac_component.rs)
@@ -111,17 +152,17 @@ Here’s how a component ends up talking to the library:
 
 1. Define a handful of `FaultDescriptor`s (the `fault_descriptor!` macro keeps them readable) and park them inside a `'static` `FaultCatalog { id, version, descriptors }`. Components still embed that slice at build time, while the DFM loads the same artifact through `FaultCatalog::from_config` so updates land via JSON/YAML config instead of rebuilding the manager.
 2. Spin up a `FaultApi` with an `Arc<dyn FaultSink>` that knows how to reach the DFM and an `Arc<dyn LogHook>` that mirrors events into your logging stack.
-3. Create a `Reporter` via `Reporter::new(ReporterConfig, Arc<FaultCatalog>)`. The config defines `SourceId`, lifecycle phase, and any default metadata; the catalog gives you descriptor lookups.
-4. When something misbehaves, call `FaultRecord::new(&reporter, &FaultId)` to pull in the descriptor. Use the builder helpers—`.with_severity`, `.with_metadata`, `.with_debounce`, `.with_reset`, `.with_extra_compliance`, `.with_stage`—to tweak the record for that incident and set the lifecycle state (`Active`, `NotSet`, `TestedAndPassed`, etc.).
-5. Hand the record to `FaultApi::publish(&record)`. It logs first, then pushes the payload through the sink and returns a `Result<(), SinkError>` so callers can react to transport failures.
+3. At startup, create one `Reporter` per fault ID using `Reporter::new(api, &catalog, config, &fault_id)`. Each reporter is bound to a single fault and holds all static config for that fault.
+4. At runtime, create a mutable `FaultRecord` from the bound `Reporter` using `reporter.create_record()`. Update the record in place (e.g., `update_metadata`, `update_stage`, `update_severity`).
+5. Publish the record via the bound reporter: `reporter.publish(&record)`. This enqueues the record to the configured FaultSink and is non-blocking for the caller.
 
-Each `FaultRecord` carries the descriptor snapshot, catalog id/version, effective policies, merged compliance tags, the chosen lifecycle stage, and any metadata the DFM needs. The whole stack stays `Send + Sync` with zero external dependencies, so it fits into async executors or bare tasks. We expect to add a convenience layer around `ReportOptions` once more components start using it.
+Each `FaultRecord` contains only runtime-mutable data (fault_id, time, severity, source, lifecycle_phase, stage, metadata). All static configuration (name, default severity, compliance, debounce, reset, etc.) lives in the `FaultDescriptor` held by the `Reporter`.
 
 ## Design Decisions & Trade-offs
 
 - **Static catalogs + runtime config:** Components still ship `'static` descriptors for zero-cost lookup, while the DFM consumes the same artifact via `FaultCatalog::from_config` so policy changes land via JSON/YAML config instead of a rebuild. This keeps deployment fast with only a light runtime copy cost on the DFM side.
-- **Self-contained records:** `FaultRecord::new` clones the descriptor so every record is safe to queue, persist, or retry. The trade-off is a bit of extra copy/alloc cost if descriptors grow large.
-- **Explicit lifecycle states:** `FaultLifecycleStage` now covers `NotSet` through `TestedAndPassed`, so consumers can tell whether a diagnostic test ran even when no fault is active; callers opt in via `FaultRecord::with_stage`.
-- **Synchronous publish path:** `FaultApi::publish` always logs first, then calls the sink on the same thread. Control loops stay simple, yet any sink that blocks on I/O will want to hand work to another task or future.
+- **Minimal runtime records:** `FaultRecord` contains only runtime-mutable data. All static configuration (descriptor, debounce, compliance, etc.) is held by the `Reporter` and not sent over IPC.
+- **Explicit lifecycle states:** `FaultLifecycleStage` now covers `NotSet` through `TestedAndPassed`, so consumers can tell whether a diagnostic test ran even when no fault is active; callers update the record in place.
+- **Non-blocking publish path:** `Reporter::publish` enqueues the record to the FaultSink and returns immediately; it does not block on DFM or transport.
 - **Declarative policies:** Debounce and reset logic ride on enums (`DebounceMode`, `ResetTrigger`). The DFM can enforce them consistently, but custom one-off algorithms need new variants or a different layer.
 - **Panic on missing descriptors:** If a caller asks for a fault that isn’t in the catalog we `expect(...)` and crash. That flushes out drift early, so production flows should generate the catalog and component code together.

@@ -34,7 +34,6 @@ macro_rules! fault_descriptor {
         severity = $sev:expr
         $(, compliance = [$($ctag:expr),* $(,)?])?
         $(, summary = $summary:literal)?
-        $(, docs = $docs:literal)?
         $(, debounce = $debounce:expr)?
         $(, reset = $reset:expr)?
     ) => {{
@@ -47,7 +46,6 @@ macro_rules! fault_descriptor {
             debounce: $(Some($debounce))?,
             reset: $(Some($reset))?,
             summary: $crate::__fault_descriptor_optional_str!($($summary)?),
-            docs_url: $crate::__fault_descriptor_optional_str!($($docs)?),
         }
     }};
 }

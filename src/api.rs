@@ -14,10 +14,11 @@
 use crate::{
     catalog::FaultCatalog,
     config::ReporterConfig,
-    model::FaultRecord,
+    ids::FaultId,
+    model::{FaultDescriptor, FaultLifecycleStage, FaultRecord},
     sink::{FaultSink, LogHook},
 };
-use std::sync::Arc;
+use std::{sync::Arc, time::SystemTime};
 
 #[derive(Clone)]
 // FaultApi is the long-lived handle that wires a sink and logger together.
@@ -44,23 +45,72 @@ impl FaultApi {
     }
 }
 
-/// What callers hold and clone in their components.
+/// Per-fault reporter bound to a specific fault descriptor.
+/// Create one instance per fault at startup.
 #[derive(Clone)]
-// Reporter carries the static config for a particular component or ECU.
 pub struct Reporter {
+    fault_id: FaultId,
+    descriptor: FaultDescriptor,
     cfg: ReporterConfig,
-    catalog: Arc<FaultCatalog>,
+    api: Arc<FaultApi>,
 }
 
 impl Reporter {
-    pub fn new(cfg: ReporterConfig, catalog: Arc<FaultCatalog>) -> Self {
-        Self { cfg, catalog }
-    }
-    pub fn cfg(&self) -> &ReporterConfig {
-        &self.cfg
+    /// Create a new Reporter bound to a specific fault ID.
+    /// This should be called once per fault during initialization.
+    pub fn new(
+        api: Arc<FaultApi>,
+        catalog: &FaultCatalog,
+        cfg: ReporterConfig,
+        fault_id: &FaultId,
+    ) -> Self {
+        let descriptor = catalog
+            .find(fault_id)
+            .expect("fault ID must exist in catalog")
+            .clone();
+
+        Self {
+            fault_id: fault_id.clone(),
+            descriptor,
+            cfg,
+            api,
+        }
     }
 
-    pub fn catalog(&self) -> &FaultCatalog {
-        &self.catalog
+    /// Create a new fault record for this specific fault.
+    /// The returned record can be mutated before publishing.
+    pub fn create_record(&self) -> FaultRecord {
+        FaultRecord {
+            fault_id: self.fault_id.clone(),
+            time: SystemTime::now(),
+            severity: self.descriptor.default_severity,
+            source: self.cfg.source.clone(),
+            lifecycle_phase: self.cfg.lifecycle_phase,
+            stage: FaultLifecycleStage::Raised,
+            metadata: self.cfg.default_meta.clone(),
+        }
+    }
+
+    /// Publish a fault record. Always logs via LogHook, then publishes via sink.
+    pub fn publish(&self, record: &FaultRecord) -> Result<(), crate::sink::SinkError> {
+        debug_assert_eq!(
+            &record.fault_id, &self.fault_id,
+            "FaultRecord fault_id doesn't match Reporter"
+        );
+        self.api.publish(record)
+    }
+
+    /// Convenience: create and return a record with Active stage
+    pub fn raise(&self) -> FaultRecord {
+        let mut rec = self.create_record();
+        rec.update_stage(FaultLifecycleStage::Active);
+        rec
+    }
+
+    /// Convenience: create and return a record with Cleared stage
+    pub fn clear(&self) -> FaultRecord {
+        let mut rec = self.create_record();
+        rec.update_stage(FaultLifecycleStage::Cleared);
+        rec
     }
 }
