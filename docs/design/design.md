@@ -48,6 +48,15 @@ Towards DFM:
 - The DFM shall be able to read additional signals (sanpshots) related to DTCS.
 - The assignment between SOVD Entity and the Fault Source / Fault ID shall be done by the DFM. Fault semantics shall support this.
 
+### Terminology and scope: Fault and DTCs
+
+- Fault (HPC/App level): A granular condition observed by application or platform logic (sensor stuck, communication mismatch, etc.). Local, fast lifecycle, optimized for reporting and correlation.
+- DTC (ISO 14229-1): A standardized diagnostic trouble code exposed to off-board tools and downstream workflows (service, regulatory, warranty).
+- Relationship: One DTC may be synthesized from one or multiple faults (logical OR, AND, debounce convergence, escalation rules). A single fault may contribute to multiple DTCs (e.g. emission + safety categories).
+- We should keep ISO 14229-1 semantics authoritative for anything that leaves the HPC/App environment.
+- HPC faults are internal diagnostic signals; they are not themselves DTCs.
+- The Diagnostic Fault Manager (DFM) performs mapping + status bit derivation from fault lifecycles.
+
 ## Architecture Overview
 
 Three main design goals:
