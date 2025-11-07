@@ -24,7 +24,7 @@ The high-level design of OpenSOVD can be found here: [OpenSOVD Design](https://g
 - **The Fault lib is the interface between the S-CORE and the OpenSOVD project and should be developed in cooperation - see [ADR S-CORE Interface](https://github.com/eclipse-opensovd/opensovd/blob/main/docs/design/adr/001-adr-score-interface.md).**
 - Relays faults via IPC to central Diagnostic Fault Manager.
 - Enables domain-specific error logic (e.g. debouncing) by exposing a configuration interface.
-- Reporting of faults additionally results in a log entry.
+- Reporting of faults additionally enables the user tp create a log entry.
 - The interface needs to be specified further but will likely include:
   - Fault ID (FID)
   - time
@@ -34,12 +34,19 @@ The high-level design of OpenSOVD can be found here: [OpenSOVD Design](https://g
 - Can and should also be used by platform components to report faults.
 - Potentially source of faults to be acted upon - e.g. by S-CORE Health and Lifecycle Management.
 - Also needs to enforce regulatory requirements for certain faults - e.g. emission relevant.
-- Need to include: lifecycle stages, severity analog DLT levels, reset policy (e.g. power cycles), debounce policy, source identifyiers (entity, ecu, etc)
+- Need to include: lifecycle stages, severity analog DLT levels, aging (reset) policy (e.g. power cycles), debounce policy, source identifyiers (entity, ecu, etc)
 - Decentral component.
 - The debouncing should be in the fault lib to reduce the traffic on the IPC.
-- fault caching if IPC to DFM should not respond, with retry.
-- support sync and async.
+- Debouncing needs to be also possible in the DFM if there is a multi-fault aggregation.
+- Aging (reset) shall be done in the DFM.
+- Fault caching (via enque) if IPC to DFM should not respond, with retry.
 - Components must be able to create a fault-specific handle that binds the descriptor once and exposes simple raise/clear calls without passing the descriptor each time.
+
+Towards DFM:
+
+- The DFM shall be able to handle debouncing and aging.
+- The DFM shall be able to read additional signals (sanpshots) related to DTCS.
+- The assignment between SOVD Entity and the Fault Source / Fault ID shall be done by the DFM. Fault semantics shall support this.
 
 ## Architecture Overview
 
@@ -158,11 +165,14 @@ Here’s how a component ends up talking to the library:
 
 Each `FaultRecord` contains only runtime-mutable data (fault_id, time, severity, source, lifecycle_phase, stage, metadata). All static configuration (name, default severity, compliance, debounce, reset, etc.) lives in the `FaultDescriptor` held by the `Reporter`.
 
+Seperate traits are used for logging and fault reporting mainly due to seperation of concerns (transport to DFM vs. observability (logging)).
+Additional reasons include: different failure domains (IPC vs logging), different performance expactations, user-control and clarity (maybe a logging system is already used directly by the user) and cleaner mocking of transport (just mock faultsink trait).
+
 ## Design Decisions & Trade-offs
 
 - **Static catalogs + runtime config:** Components still ship `'static` descriptors for zero-cost lookup, while the DFM consumes the same artifact via `FaultCatalog::from_config` so policy changes land via JSON/YAML config instead of a rebuild. This keeps deployment fast with only a light runtime copy cost on the DFM side.
 - **Minimal runtime records:** `FaultRecord` contains only runtime-mutable data. All static configuration (descriptor, debounce, compliance, etc.) is held by the `Reporter` and not sent over IPC.
 - **Explicit lifecycle states:** `FaultLifecycleStage` now covers `NotSet` through `TestedAndPassed`, so consumers can tell whether a diagnostic test ran even when no fault is active; callers update the record in place.
 - **Non-blocking publish path:** `Reporter::publish` enqueues the record to the FaultSink and returns immediately; it does not block on DFM or transport.
-- **Declarative policies:** Debounce and reset logic ride on enums (`DebounceMode`, `ResetTrigger`). The DFM can enforce them consistently, but custom one-off algorithms need new variants or a different layer.
+- **Declarative policies:** Debounce and aging (reset) logic ride on enums (`DebounceMode`, `ResetTrigger`) to handle typical cases. The Fault Lib and/or DFM can enforce them consistently, but custom one-off algorithms need new variants or a different layer. Clarification: Debouncing is done in Fault Lib and/or DFM (if central states / aggregate DTCs are needed) and aging (reset) is done in DFM (because of central state).
 - **Panic on missing descriptors:** If a caller asks for a fault that isn’t in the catalog we `expect(...)` and crash. That flushes out drift early, so production flows should generate the catalog and component code together.
