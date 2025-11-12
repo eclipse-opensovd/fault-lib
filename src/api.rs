@@ -88,8 +88,8 @@ impl Reporter {
             severity: self.descriptor.default_severity,
             source: self.cfg.source.clone(),
             lifecycle_phase: self.cfg.lifecycle_phase,
-            stage: FaultLifecycleStage::Raised,
-            environment_data: self.cfg.default_meta.clone(),
+            stage: FaultLifecycleStage::NotTested,
+            environment_data: self.cfg.default_environment_data.clone(),
         }
     }
 
@@ -102,17 +102,17 @@ impl Reporter {
         FaultApi::publish(record)
     }
 
-    /// Convenience: create and return a record with Active stage
-    pub fn raise(&self) -> FaultRecord {
+    /// Convenience: create and return a record with Failed stage (confirmed failure)
+    pub fn fail(&self) -> FaultRecord {
         let mut rec = self.create_record();
-        rec.update_stage(FaultLifecycleStage::Active);
+        rec.update_stage(FaultLifecycleStage::Failed);
         rec
     }
 
-    /// Convenience: create and return a record with Cleared stage
-    pub fn clear(&self) -> FaultRecord {
+    /// Convenience: create and return a record with Passed stage (healthy)
+    pub fn pass(&self) -> FaultRecord {
         let mut rec = self.create_record();
-        rec.update_stage(FaultLifecycleStage::Cleared);
+        rec.update_stage(FaultLifecycleStage::Passed);
         rec
     }
 }

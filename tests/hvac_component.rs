@@ -150,8 +150,8 @@ impl DummyApp {
     // Attach runtime environment data
     record.add_environment_data("measured_rpm", measured_rpm.to_string());
     record.add_environment_data("commanded_rpm", commanded_rpm.to_string());
-        // Set the lifecycle stage for this occurrence
-        record.update_stage(FaultLifecycleStage::Active);
+    // Mark test result as failed (confirmed after any debounce logic) for this occurrence
+    record.update_stage(FaultLifecycleStage::Failed);
 
         // Publish the record via the bound reporter.
         // This enqueues the record to the configured FaultSink (IPC)
@@ -185,7 +185,7 @@ mod tests {
                 instance: None,
             },
             lifecycle_phase: LifecyclePhase::Running,
-            default_meta: vec![KeyValue {
+            default_environment_data: vec![KeyValue {
                 key: "sw.version",
                 value: "2024.10.0".into(),
             }],

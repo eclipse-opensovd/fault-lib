@@ -34,7 +34,7 @@ The high-level design of OpenSOVD can be found here: [OpenSOVD Design](https://g
 - Can and should also be used by platform components to report faults.
 - Potentially source of faults to be acted upon - e.g. by S-CORE Health and Lifecycle Management.
 - Also needs to enforce regulatory requirements for certain faults - e.g. emission relevant.
-- Need to include: lifecycle stages, severity analog DLT levels, aging (reset) policy (e.g. power cycles), debounce policy, source identifiers (entity, ecu, etc)
+- Need to include: lifecycle stages, severity analog DLT levels, aging (reset) policy (e.g. operation cycles), debounce policy (count + time based), source identifiers (entity, ecu, etc)
 - Decentral component.
 - The debouncing should be in the fault lib to reduce the traffic on the IPC.
 - Debouncing needs to be also possible in the DFM if there is a multi-fault aggregation.
@@ -174,14 +174,20 @@ Here’s how a component ends up talking to the library:
 
 Each `FaultRecord` contains only runtime-mutable data (fault_id, time, severity, source, lifecycle_phase, stage, environment_data). All static configuration (name, default severity, compliance, debounce, reset, etc.) lives in the `FaultDescriptor` held by the `Reporter`.
 
-Seperate traits are used for logging and fault reporting mainly due to seperation of concerns (transport to DFM vs. observability (logging)).
+Separate traits are used for logging and fault reporting mainly due to separation of concerns (transport to DFM vs. observability (logging)).
 Additional reasons include: different failure domains (IPC vs logging), different performance expactations, user-control and clarity (maybe a logging system is already used directly by the user) and cleaner mocking of transport (just mock faultsink trait).
 
 ## Design Decisions & Trade-offs
 
 - **Static catalogs + runtime config:** Components still ship `'static` descriptors for zero-cost lookup, while the DFM consumes the same artifact via `FaultCatalog::from_config` so policy changes land via JSON/YAML config instead of a rebuild. This keeps deployment fast with only a light runtime copy cost on the DFM side.
 - **Minimal runtime records:** `FaultRecord` contains only runtime-mutable data. All static configuration (descriptor, debounce, compliance, etc.) is held by the `Reporter` and not sent over IPC.
-- **Explicit lifecycle states:** `FaultLifecycleStage` now covers `NotSet` through `TestedAndPassed`, so consumers can tell whether a diagnostic test ran even when no fault is active; callers update the record in place.
+- **Explicit lifecycle states (test-centric):** `FaultLifecycleStage` uses `NotTested`, `PreFailed`, `Failed`, `PrePassed`, `Passed` to track raw test outcomes and debounce stabilization. DTC lifecycle (pending, confirmed, aging) is not represented here; it is derived by the DFM from these stages.
 - **Non-blocking publish path:** `Reporter::publish` enqueues the record to the FaultSink and returns immediately; it does not block on DFM or transport.
-- **Declarative policies:** Debounce and aging (reset) logic ride on enums (`DebounceMode`, `ResetTrigger`) to handle typical cases. The Fault Lib and/or DFM can enforce them consistently, but custom one-off algorithms need new variants or a different layer. Clarification: Debouncing is done in Fault Lib and/or DFM (if central states / aggregate DTCs are needed) and aging (reset) is done in DFM (because of central state).
+- **Declarative policies:** Debounce and aging (reset) logic ride on enums (`DebounceMode`, `ResetTrigger`) to handle typical cases. Debounce variants: `CountWithinWindow { min_count, window }`, `HoldTime { duration }`, `EdgeWithCooldown { cooldown }`, `CountThreshold { min_count }`. Reset triggers: `OperationCycles { kind, min_cycles, cycle_ref }`, `StableFor(duration)`, `ToolOnly`. `cycle_ref` links the aging policy to a concrete cycle counter identity (e.g. `"ignition.main"`, `"drive.standard"`) so the DFM can correlate counts from different domains. Clarification: Debouncing can occur in Fault Lib and/or DFM (if central aggregation needed) while aging (reset) is performed in DFM.
 - **Panic on missing descriptors:** If a caller asks for a fault that isn’t in the catalog we `expect(...)` and crash. That flushes out drift early, so production flows should generate the catalog and component code together.
+
+## Open Topics
+
+Open Topics to be addressed during development:
+
+- [ ] define time source for faults and fault lib. Time source can be from application, from fault lib or both.

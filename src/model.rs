@@ -60,15 +60,16 @@ pub enum LifecyclePhase {
     Shutdown,
 }
 
-/// State of a fault’s lifecycle.
+/// Simplified internal test lifecycle aligned with ISO 14229-1 style semantics.
+/// DTC lifecycle (confirmation, pending, aging, etc.) is handled centrally by the DFM.
+/// The fault-lib only tracks raw test pass/fail progression + pre-states around debounce.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FaultLifecycleStage {
-    NotSet,           // descriptor exists but underlying test not executed yet
-    Raised,           // newly observed; debounce may still be in progress
-    Active,           // diagnostic test ran and confirmed the fault
-    Latched,          // sticky until reset policy conditions met
-    Cleared,          // condition gone; record maintained per policy
-    TestedAndPassed,  // test executed and passed; no active fault
+    NotTested,   // test not executed yet for this reporting window
+    PreFailed,   // initial failure observed but still within debounce/pending window
+    Failed,      // confirmed failure (debounce satisfied / threshold met)
+    PrePassed,   // transitioning back to healthy; stability window accumulating
+    Passed,      // test executed and passed (healthy condition)
 }
 
 /// Minimal, typed environment data; keep serde-agnostic at the API edge.

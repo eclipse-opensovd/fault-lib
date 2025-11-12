@@ -30,7 +30,6 @@ pub trait LogHook: Send + Sync + 'static {
 /// - Lifetime: installed once in `FaultApi::new` and lives for the duration of the process.
 ///
 /// Implementations can be S-CORE IPC.
-#[allow(async_fn_in_trait)]
 pub trait FaultSink: Send + Sync + 'static {
     /// Enqueue a record for delivery to the Diagnostic Fault Manager.
     fn publish(&self, record: &FaultRecord) -> Result<(), SinkError>;
