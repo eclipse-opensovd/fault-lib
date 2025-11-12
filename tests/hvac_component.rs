@@ -147,9 +147,9 @@ impl DummyApp {
     fn handle_blower_fault(&self, measured_rpm: f32, commanded_rpm: f32) {
         // Create a new record for this fault occurrence
         let mut record = self.blower_fault.create_record();
-        // Attach runtime metadata
-        record.update_metadata("measured_rpm", measured_rpm.to_string());
-        record.update_metadata("commanded_rpm", commanded_rpm.to_string());
+    // Attach runtime environment data
+    record.add_environment_data("measured_rpm", measured_rpm.to_string());
+    record.add_environment_data("commanded_rpm", commanded_rpm.to_string());
         // Set the lifecycle stage for this occurrence
         record.update_stage(FaultLifecycleStage::Active);
 

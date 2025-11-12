@@ -89,7 +89,7 @@ impl Reporter {
             source: self.cfg.source.clone(),
             lifecycle_phase: self.cfg.lifecycle_phase,
             stage: FaultLifecycleStage::Raised,
-            metadata: self.cfg.default_meta.clone(),
+            environment_data: self.cfg.default_meta.clone(),
         }
     }
 

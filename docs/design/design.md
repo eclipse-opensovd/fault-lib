@@ -150,7 +150,7 @@ sequenceDiagram
     Reporter-->>App: FaultRecord
     
     Note over App,DFM: Runtime: Detect and Report Fault
-    App->>App: update metadata & stage
+  App->>App: update environment data & stage
     App->>Reporter: publish
     Reporter->>FaultApi: publish
     FaultApi->>FaultApi: log via log-sink
@@ -169,10 +169,10 @@ Here’s how a component ends up talking to the library:
 1. Define a handful of `FaultDescriptor`s (the `fault_descriptor!` macro keeps them readable) and park them inside a `'static` `FaultCatalog { id, version, descriptors }`. Components still embed that slice at build time, while the DFM loads the same artifact through `FaultCatalog::from_config` so updates land via JSON/YAML config instead of rebuilding the manager.
 2. Spin up a `FaultApi` with an `Arc<dyn FaultSink>` that knows how to reach the DFM and an `Arc<dyn LogHook>` that mirrors events into your logging stack.
 3. Initialize the singleton FaultApi once (`FaultApi::new(sink, logger)`), then create one `Reporter` per fault ID using `Reporter::new(&catalog, config, &fault_id)`. Each reporter is bound to a single fault and holds static config for that fault.
-4. At runtime, create a mutable `FaultRecord` from the bound `Reporter` using `reporter.create_record()`. Update the record in place (e.g., `update_metadata`, `update_stage`, `update_severity`).
+4. At runtime, create a mutable `FaultRecord` from the bound `Reporter` using `reporter.create_record()`. Update the record in place (e.g., `add_environment_data`, `update_stage`, `update_severity`).
 5. Publish the record via the bound reporter: `reporter.publish(&record)`. This enqueues the record to the configured FaultSink and is non-blocking for the caller.
 
-Each `FaultRecord` contains only runtime-mutable data (fault_id, time, severity, source, lifecycle_phase, stage, metadata). All static configuration (name, default severity, compliance, debounce, reset, etc.) lives in the `FaultDescriptor` held by the `Reporter`.
+Each `FaultRecord` contains only runtime-mutable data (fault_id, time, severity, source, lifecycle_phase, stage, environment_data). All static configuration (name, default severity, compliance, debounce, reset, etc.) lives in the `FaultDescriptor` held by the `Reporter`.
 
 Seperate traits are used for logging and fault reporting mainly due to seperation of concerns (transport to DFM vs. observability (logging)).
 Additional reasons include: different failure domains (IPC vs logging), different performance expactations, user-control and clarity (maybe a logging system is already used directly by the user) and cleaner mocking of transport (just mock faultsink trait).

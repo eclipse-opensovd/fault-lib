@@ -71,7 +71,7 @@ pub enum FaultLifecycleStage {
     TestedAndPassed,  // test executed and passed; no active fault
 }
 
-/// Minimal, typed metadata; keep serde-agnostic at the API edge.
+/// Minimal, typed environment data; keep serde-agnostic at the API edge.
 #[derive(Debug, Clone)]
 pub struct KeyValue {
     pub key: &'static str,
@@ -108,9 +108,9 @@ pub struct FaultRecord {
 }
 
 impl FaultRecord {
-    /// Update metadata (mutable)
-    pub fn update_metadata(&mut self, key: &'static str, value: String) {
-        self.metadata.push(KeyValue { key, value });
+    /// Append environment data (mutable)
+    pub fn add_environment_data(&mut self, key: &'static str, value: String) {
+        self.environment_data.push(KeyValue { key, value });
         self.time = SystemTime::now();
     }
 
