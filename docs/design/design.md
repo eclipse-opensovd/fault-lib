@@ -24,28 +24,28 @@ The high-level design of OpenSOVD can be found here: [OpenSOVD Design](https://g
 - **The Fault lib is the interface between the S-CORE and the OpenSOVD project and should be developed in cooperation - see [ADR S-CORE Interface](https://github.com/eclipse-opensovd/opensovd/blob/main/docs/design/adr/001-adr-score-interface.md).**
 - Relays faults via IPC to central Diagnostic Fault Manager.
 - Enables domain-specific error logic (e.g. debouncing) by exposing a configuration interface.
-- Reporting of faults additionally enables the user tp create a log entry.
+- Reporting of test results (passed / failed) additionally enables the user to create a log entry.
 - The interface needs to be specified further but will likely include:
   - Fault ID (FID)
   - time
   - ENUM fault type (like DLT ENUMs)
-  - optional meta data
+  - optional environment data
 - Fault lib is the base for activity specific, custom fault handling.
 - Can and should also be used by platform components to report faults.
 - Potentially source of faults to be acted upon - e.g. by S-CORE Health and Lifecycle Management.
 - Also needs to enforce regulatory requirements for certain faults - e.g. emission relevant.
-- Need to include: lifecycle stages, severity analog DLT levels, aging (reset) policy (e.g. power cycles), debounce policy, source identifyiers (entity, ecu, etc)
+- Need to include: lifecycle stages, severity analog DLT levels, aging (reset) policy (e.g. power cycles), debounce policy, source identifiers (entity, ecu, etc)
 - Decentral component.
 - The debouncing should be in the fault lib to reduce the traffic on the IPC.
 - Debouncing needs to be also possible in the DFM if there is a multi-fault aggregation.
 - Aging (reset) shall be done in the DFM.
-- Fault caching (via enque) if IPC to DFM should not respond, with retry.
+- Fault caching (via enqueue) if IPC to DFM should not respond, with retry.
 - Components must be able to create a fault-specific handle that binds the descriptor once and exposes simple raise/clear calls without passing the descriptor each time.
 
 Towards DFM:
 
-- The DFM shall be able to handle debouncing and aging.
-- The DFM shall be able to read additional signals (sanpshots) related to DTCS.
+- The DFM shall handle debouncing and aging.
+- The DFM shall be able to read additional environment data (snapshots) related to DTCs.
 - The assignment between SOVD Entity and the Fault Source / Fault ID shall be done by the DFM. Fault semantics shall support this.
 
 ### Terminology and scope: Fault and DTCs
@@ -55,7 +55,7 @@ Towards DFM:
 - Relationship: One DTC may be synthesized from one or multiple faults (logical OR, AND, debounce convergence, escalation rules). A single fault may contribute to multiple DTCs (e.g. emission + safety categories).
 - We should keep ISO 14229-1 semantics authoritative for anything that leaves the HPC/App environment.
 - HPC faults are internal diagnostic signals; they are not themselves DTCs.
-- The Diagnostic Fault Manager (DFM) performs mapping + status bit derivation from fault lifecycles.
+- The Diagnostic Fault Manager (DFM) performs mapping + status bit derivation from fault lifecycles, operation cycle,..
 
 ## Architecture Overview
 
@@ -129,7 +129,7 @@ rB --> |diagnostic respone | rA
 rC --> |publishes faults to| rE
 rB --> |requests DTCs from | rE
 rE --> |sends DTCs to | rB
-rD --> |reports faults to| rC
+rD --> |reports test results to| rC
 
   classDef role stroke-width:0px;
 ```

@@ -104,7 +104,7 @@ pub struct FaultRecord {
     pub source: crate::ids::SourceId,
     pub lifecycle_phase: LifecyclePhase,
     pub stage: FaultLifecycleStage,
-    pub metadata: Vec<KeyValue>,
+    pub environment_data: Vec<KeyValue>,
 }
 
 impl FaultRecord {

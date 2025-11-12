@@ -64,7 +64,7 @@ pub struct ReportOptions {
     /// Override severity (else descriptor.default_severity).
     pub severity: Option<crate::model::FaultSeverity>,
     /// Attach extra metadata key-values (free form).
-    pub metadata: Vec<crate::model::KeyValue>,
+    pub environment_data: Vec<crate::model::KeyValue>,
     /// Override policies dynamically (rare, but useful for debug/A-B).
     pub debounce: Option<DebouncePolicy>,
     pub reset: Option<ResetPolicy>,
