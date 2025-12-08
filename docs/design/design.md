@@ -186,6 +186,59 @@ Additional reasons include: different failure domains (IPC vs logging), differen
 - **Declarative policies:** Debounce and aging (reset) logic ride on enums (`DebounceMode`, `ResetTrigger`) to handle typical cases. Debounce variants: `CountWithinWindow { min_count, window }`, `HoldTime { duration }`, `EdgeWithCooldown { cooldown }`, `CountThreshold { min_count }`. Reset triggers: `OperationCycles { kind, min_cycles, cycle_ref }`, `StableFor(duration)`, `ToolOnly`. `cycle_ref` links the aging policy to a concrete cycle counter identity (e.g. `"ignition.main"`, `"drive.standard"`) so the DFM can correlate counts from different domains. Clarification: Debouncing can occur in Fault Lib and/or DFM (if central aggregation needed) while aging (reset) is performed in DFM.
 - **Panic on missing descriptors:** If a caller asks for a fault that isn’t in the catalog we `expect(...)` and crash. That flushes out drift early, so production flows should generate the catalog and component code together.
 
+
+### Repositories structures - TBD
+
+The fault-lib, the Diagnostic Fault Manager and sovd server will have to share common types like `FaultCatalog` , `FaultDescriptor` (including all used types), etc. 
+Since the Diagnostic Fault Manager will have only one instance in the HPC it would make sense to locate it in the same repository where the SOVD server is implemented (TBD) (despite if there will be IPC or direct API between them). The fault-api will be used by many applications and activities in the system and it would make sense to expose in this package only necessary types.
+
+#### Proposal I - separated repos
+
+
+![Split SOVD repositories](sovd-repos-op1.svg)
+
+
+**Pros**:
+
+- smaller leaner repos 
+- 
+
+
+**Cons**:
+
+- api changes split over few repos, can easy lead to compatibility brake (change in the `sovd-common` and `fault-lib` done but not merged into `sovd-core`, etc  )
+- compatibility tracking between 3 sovd crates needed 
+
+
+
+#### Proposal II - SOVD mono repo 
+
+The sovd-core repository will host implementation of all components. Each component has his own crate. 
+
+- fault-lib
+- sovd common shared types 
+- diagnostic fault manager 
+- sovd server 
+
+The application will be able to see and use any sovd artefact. 
+
+**Pros**:
+
+- less effort to bring API / common types / change into up stream 
+- no compatibility issues between crates 
+- bazel preferred approach 
+
+
+**Cons**: 
+
+- possible high traffic in the repository forcing often rebasing 
+- size of the repository 
+
+
+
+
+
+
 ## Open Topics
 
 Open Topics to be addressed during development:
