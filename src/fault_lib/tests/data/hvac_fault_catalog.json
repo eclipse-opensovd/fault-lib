@@ -1,0 +1,53 @@
+{
+    "id": "hvac",
+    "version": 3,
+    "faults": [
+        {
+            "id": {
+                "Numeric": 28673
+            },
+            "name": "CabinTempSensorStuck",
+            "summary": null,
+            "category": "Communication",
+            "severity": "Error",
+            "compliance": [
+                "EmissionRelevant"
+            ],
+            "reporter_side_debounce": {
+                "HoldTime": {
+                    "duration": {
+                        "secs": 60,
+                        "nanos": 0
+                    }
+                }
+            },
+            "reporter_side_reset": null,
+            "manager_side_debounce": null,
+            "manager_side_reset": null
+        },
+        {
+            "id": {
+                "Text": "hvac.blower.speed_sensor_mismatch"
+            },
+            "name": "BlowerSpeedMismatch",
+            "summary": "Human-readable summary",
+            "category": "Communication",
+            "severity": "Error",
+            "compliance": [
+                "SecurityRelevant",
+                "SafetyCritical"
+            ],
+            "reporter_side_debounce": null,
+            "reporter_side_reset": null,
+            "manager_side_debounce": {
+                "EdgeWithCooldown": {
+                    "cooldown": {
+                        "secs": 0,
+                        "nanos": 100000000
+                    }
+                }
+            },
+            "manager_side_reset": null
+        }
+    ]
+}

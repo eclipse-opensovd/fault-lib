@@ -1,0 +1,56 @@
+@startuml 
+title Fault Catalog Initialization 
+
+skinparam ParticipantPadding 20
+
+box "App"
+participant App order 1  
+create FaultLib order 2
+App -> FaultLib : instantiate 
+end box 
+
+box "DFM"
+participant DiagnosticFaultMgr order 3
+end box
+
+
+FaultLib -> FaultLib : read_and_verify_catalog_config_file()
+FaultLib -> FaultLib : calculate_catalog_hashsum()
+FaultLib -> DiagnosticFaultMgr : ipc::VerifyFaultCatalogRequest(hashsum)
+alt 
+    note right of DiagnosticFaultMgr
+        The Fault Catalog is consistent with the 
+        one present in Diagnostic Fault Manager (DFM)
+    end note 
+    FaultLib <-- DiagnosticFaultMgr : ipc::Ok()
+    FaultLib -> FaultLib : FaultCatalogOk()
+else 
+    note right of DiagnosticFaultMgr
+        The Fault Catalog is not consistent with the 
+        one present in Diagnostic Fault Manager 
+    end note 
+    FaultLib <-- DiagnosticFaultMgr : ipc::Error() 
+    FaultLib -> DiagnosticFaultMgr : ipc::UpdateFaultCatalogRequest(faultCatalog)
+    note right of DiagnosticFaultMgr
+        The DFM updates local Fault catalog,
+        based on the info received from the app. 
+    end note 
+    DiagnosticFaultMgr -> DiagnosticFaultMgr : updateLocalDB(faultCatalog)
+    alt 
+        note right of DiagnosticFaultMgr 
+            In case the update of the fault 
+            catalog fails on DFM side, there will be no recovery. 
+            FaultDiagnosticManager shall report internal error !!!
+        end note 
+        DiagnosticFaultMgr -> DiagnosticFaultMgr : enterErrorState()
+        FaultLib <--DiagnosticFaultMgr : ipc::Error()
+        
+    else
+        FaultLib <--DiagnosticFaultMgr : ipc::Ok()
+        FaultLib -> FaultLib : FaultCatalogOk()
+    end 
+
+end 
+
+
+@enduml 

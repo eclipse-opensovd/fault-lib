@@ -1,0 +1,97 @@
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+line-length = 120
+indent-width = 4
+
+[lint]
+select = [
+    # flake8-boolean-trap
+    "FBT",
+    # flake8-bugbear
+    "B",
+    # flake8-builtins
+    "A",
+    # flake8-comprehensions
+    "C4",
+    # flake8-fixme
+    "FIX",
+    # flake8-implicit-str-concat
+    "ISC",
+    # flake8-pie
+    "PIE",
+    # flake8-print
+    "T20",
+    # flake8-pytest-style
+    "PT",
+    # flake8-raise
+    "RSE",
+    # flake8-return
+    "RET501",
+    "RET502",
+    "RET503",
+    "RET504",
+    # flake8-self
+    "SLF",
+    # flake8-simplify
+    "SIM",
+    # flake8-type-checking
+    "TC",
+    # flake8-unused-arguments
+    "ARG",
+    # flake8-use-pathlib
+    "PTH",
+
+    # isort
+    "I",
+
+    # pycodestyle error
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+]
+ignore = ["F401", "PTH123", "ARG002"]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"

@@ -1,0 +1,20 @@
+diff --git Cargo.toml Cargo.toml
+index 8fc1a73..a7cbab9 100644
+--- Cargo.toml
++++ Cargo.toml
+@@ -7,6 +7,6 @@ keywords = { workspace = true }
+-license = { workspace = true }
+-readme = { workspace = true }
++license = { workspace = true }
++readme = "README.md"
+ repository = { workspace = true }
+ rust-version = { workspace = true }
+ version = { workspace = true }
+
+diff --git README.md README.md
+new file mode 100644
+index 0000000..d969f9d
+--- /dev/null
++++ README.md
+@@ -0,0 +1 @@
++Dummy redme for CARGO_PKG_README error.
