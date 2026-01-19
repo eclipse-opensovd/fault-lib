@@ -1,0 +1,43 @@
+
+
+@startuml
+title Enabling Condition :  status notifications between activities or apps
+box App1
+participant App
+participant "EnablingCondition[id=XXX]"
+participant FaultMonitor
+participant FaultLib
+end box 
+
+box "DFM"
+participant DiagFaultMgr
+end box 
+
+
+ref over "EnablingCondition[id=XXX]", FaultLib:  [[new_enable_condition.svg New Enable Condition]]
+
+App -> FaultLib : get_fault(sovd_path,id,debouncing,enabling_conditions[])
+App <-- FaultLib : Some<Fault(fault_id)>
+
+create FaultMonitor
+App -> FaultMonitor : FaultMonitor::new(Fault, enabling_conditions, callback)
+
+FaultMonitor -> FaultLib : register()
+FaultLib -> FaultLib : store(fault_monitor)
+note right of FaultLib
+    The FL has to keep locally the track which fault 
+    monitors are subscribing on which enabling conditions 
+end note 
+
+
+
+
+App -> "EnablingCondition[id=XXX]" : report_status(pass/fail)
+"EnablingCondition[id=XXX]" -> FaultLib : report_status()
+
+FaultLib -> DiagFaultMgr : ipc::notifyEnablingCondition(id=XXX, pass/fail)
+FaultMonitor <-FaultLib : notify_ec_change(id=XXX, pass/fail)
+App <- FaultMonitor : ntf_condition_change(EnablingCondition[id=XXX],state)
+
+@enduml
+

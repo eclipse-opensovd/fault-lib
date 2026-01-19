@@ -1,0 +1,39 @@
+@startuml
+title Registering new enable condition by the provider
+box "App"
+participant App
+participant EnablingCondition
+participant FaultLib
+end box 
+box "DFM"
+participant DiagFaultMgr
+end box
+
+== Startup == 
+FaultLib -> DiagFaultMgr : ipc::subscribeEnablingConditions()
+FaultLib <- DiagFaultMgr : ipc::ntfEnablingConditions(list[])
+
+App -> FaultLib : get_enabling_condition(sovd_entity)
+FaultLib -> FaultLib : check_if_exist(sovd_entity)
+
+alt [ "EnablingCondition already exist or error"] 
+    App <-- FaultLib : Error 
+else 
+    
+    create EnablingCondition
+    EnablingCondition <-  FaultLib : new::EnablingCondition()
+    FaultLib -> DiagFaultMgr: ipc::registerEnablingCondition()
+    FaultLib <-- DiagFaultMgr: ipc::register(Ok, id)
+    App <-- FaultLib : Ok(Some<EnablingCondition>)
+end 
+
+== Reporting Condition Change == 
+
+App -> EnablingCondition : report_status(active/passive)
+EnablingCondition -> FaultLib : report_status()
+App <-- EnablingCondition
+FaultLib -> DiagFaultMgr : ipc::reportEnablingCondition(id, pass/fail)
+
+
+
+@enduml

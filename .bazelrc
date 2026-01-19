@@ -1,0 +1,14 @@
+build --java_language_version=17
+build --tool_java_language_version=17
+build --java_runtime_version=remotejdk_17
+build --tool_java_runtime_version=remotejdk_17
+build --@score-baselibs//score/json:base_library=nlohmann
+build --@score-baselibs//score/mw/log/flags:KRemote_Logging=False
+
+test --test_output=errors
+
+common --registry=https://raw.githubusercontent.com/eclipse-score/bazel_registry/main/
+common --registry=https://bcr.bazel.build
+
+# allow empty globs for docs
+build --noincompatible_disallow_empty_glob

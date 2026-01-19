@@ -1,0 +1,74 @@
+@startuml
+title Reporting fault by the app 
+skinparam ParticipantPadding 20
+
+box "App"
+participant App
+participant FaultMonitor
+participant FaultLib
+end box 
+box "DFM"
+participant DiagFaultMgr
+end box 
+
+
+ref over FaultLib, DiagFaultMgr:  [[fault_catalog.svg Fault Catalog Init]]
+
+== Start up == 
+
+FaultLib -> DiagFaultMgr : ipc::subscribeEnablingConditions()
+FaultLib <- DiagFaultMgr : ipc::ntfEnablingConditions(list[])
+
+App -> FaultLib : get_fault(sovd_path,id,debouncing,enabling_conditions[])
+note right of FaultLib
+    "This diagram does not consider the case 
+    when the fault doesn't exist in catalog"
+end note 
+
+FaultLib -> FaultLib : check_register_fault(sovd_path,enabling_conditions[])
+
+alt [[ "Fault doesn't exist in catalog" ]]
+
+    App <-- FaultLib : None
+else 
+    
+    App <-- FaultLib : Some<Fault(fault_id)>
+
+create FaultMonitor
+App -> FaultMonitor : FaultMonitor::new(Fault)
+
+
+FaultMonitor -> FaultLib : register()
+FaultLib -> FaultLib : store(fault_monitor)
+App <-- FaultMonitor : 
+App -> App : store/use FaultMonitor
+end 
+== App Reporting Fault == 
+
+App -> FaultMonitor : report_status(pass/fail)
+FaultMonitor -> FaultMonitor : check_debouncing() 
+
+alt  ["Debouncing Not passed or enabling conditions not fulfilled"]
+    App <-- FaultMonitor 
+else
+    FaultMonitor -> FaultLib : report(fault_id, status)
+    App <-- FaultMonitor
+    FaultLib -> DiagFaultMgr : ipc::report_fault_status(id, status)
+        alt [["Reporting OK"]]
+            FaultLib <-- DiagFaultMgr : Ok()
+            FaultMonitor <-- FaultLib : report(ok)
+            note right of FaultMonitor
+                Mark that the last fault report is ok
+            end note 
+        else 
+            FaultLib <-- DiagFaultMgr : Error()
+            FaultMonitor <-- FaultLib : report(Error)
+            note right of FaultMonitor
+                Depending on the Fault properties, the fault monitor 
+                will decide if make retry or immediately stop 
+                the application (safety case ?)
+            end note 
+        end    
+end 
+
+@enduml

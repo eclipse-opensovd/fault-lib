@@ -1,0 +1,32 @@
+[package]
+name = "dfm_lib"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+authors.workspace = true
+
+[[bin]]
+path = "examples/dfm.rs"
+name = "dfm"
+
+[[bin]]
+path = "examples/sovd_fault_manager.rs"
+name = "sovd_fm"
+
+
+[dependencies]
+env_logger.workspace = true
+common = { path = "../common" }
+fault_lib = { path = "../fault_lib" }
+iceoryx2.workspace = true
+iceoryx2-bb-container.workspace = true
+thiserror.workspace = true
+log = { workspace = true, features = ["std"] }
+mockall.workspace = true
+rust_kvs = { git = "https://github.com/eclipse-score/persistency.git" ,  branch = "main"}
+tempfile = "3.20"
+serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3.20"
+serde_json = "1.0"
