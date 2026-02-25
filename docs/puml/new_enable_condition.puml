@@ -1,0 +1,43 @@
+@startuml
+title Registering new enabling condition by the provider
+skinparam ParticipantPadding 20
+
+box "App Process"
+participant App
+participant EnablingCondition
+participant FaultLib
+participant "IpcWorker\n(fault_client_worker)" as IpcWorker
+end box
+box "DFM Process"
+participant DiagFaultMgr
+participant EnablingConditionRegistry
+end box
+
+== Registration ==
+
+App -> FaultLib : FaultApi::get_enabling_condition(sovd_entity)
+FaultLib -> FaultLib : EnablingConditionManager.check_if_exist(sovd_entity)
+
+alt ["EnablingCondition already registered or entity too long"]
+    App <-- FaultLib : Err(AlreadyRegistered | EntityTooLong)
+else
+    FaultLib -> FaultLib : store condition (status = Inactive)
+    create EnablingCondition
+    EnablingCondition <- FaultLib : new(id, manager)
+    FaultLib ->> IpcWorker : mpsc::try_send(\nEnablingConditionRegister\n(sovd_entity))
+    IpcWorker ->> DiagFaultMgr : iceoryx2 publish\non "dfm/event"
+    DiagFaultMgr -> EnablingConditionRegistry : register(sovd_entity)
+    App <-- FaultLib : Ok(EnablingCondition)
+end
+
+== Reporting Condition Change ==
+
+App -> EnablingCondition : report_status(Active)
+EnablingCondition -> FaultLib : EnablingConditionManager.report_status()
+FaultLib -> FaultLib : update local state + notify local monitors
+App <-- EnablingCondition : Ok(())
+FaultLib ->> IpcWorker : mpsc::try_send(\nEnablingConditionStatusChange\n(entity, Active))
+IpcWorker ->> DiagFaultMgr : iceoryx2 publish\non "dfm/event"
+DiagFaultMgr -> EnablingConditionRegistry : update_status(entity, Active)
+
+@enduml

@@ -1,0 +1,58 @@
+@startuml
+title Enabling Condition : cross-app status notifications
+skinparam ParticipantPadding 20
+
+box "App1 Process"
+participant App1
+participant "EnablingCondition[entity]" as EC
+participant FaultLib1
+participant "IpcWorker1" as IW1
+end box
+
+box "DFM Process"
+participant DiagFaultMgr
+participant EnablingConditionRegistry
+end box
+
+box "App2 Process"
+participant "IpcWorker2" as IW2
+participant FaultLib2
+participant FaultMonitor
+participant App2
+end box
+
+== Setup ==
+
+App2 -> FaultLib2 : create_fault_monitor(["entity"], callback)
+create FaultMonitor
+FaultLib2 -> FaultMonitor : new(condition_ids, callback)
+FaultMonitor -> FaultLib2 : register_monitor()
+FaultLib2 -> FaultLib2 : EnablingConditionManager.register_monitor()
+note right of FaultLib2
+    The FaultLib keeps locally the track which fault
+    monitors are subscribing on which enabling conditions.
+    Monitors are auto-unregistered when dropped.
+end note
+
+== Status Reporting ==
+
+App1 -> EC : report_status(Active)
+EC -> FaultLib1 : EnablingConditionManager.report_status()
+FaultLib1 -> FaultLib1 : update local state + notify local monitors
+FaultLib1 ->> IW1 : mpsc::try_send(\nEnablingConditionStatusChange\n(entity, Active))
+IW1 ->> DiagFaultMgr : iceoryx2 publish\non "dfm/event"
+DiagFaultMgr -> EnablingConditionRegistry : update_status(entity, Active)
+DiagFaultMgr ->> IW2 : iceoryx2 publish on\n"dfm/enabling_condition/notification"
+note right of IW2
+    IpcWorker polls the iceoryx2
+    subscriber in its main loop
+    (recv_timeout 50ms cycle).
+end note
+IW2 -> FaultLib2 : EnablingConditionManager\n.handle_remote_notification()
+FaultMonitor <- FaultLib2 : callback.on_condition_change(entity, Active)
+App2 <- FaultMonitor : on_condition_change(entity, Active)
+note right of FaultMonitor
+    Applications are notified when
+    enabling condition status changes
+end note
+@enduml

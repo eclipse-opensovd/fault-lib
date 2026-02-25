@@ -1,0 +1,45 @@
+@startuml
+title Fault Catalog Initialization
+
+skinparam ParticipantPadding 20
+
+box "App Process"
+participant App order 1
+create FaultLib order 2
+App -> FaultLib : FaultApi::try_new(catalog)
+participant "IpcWorker\n(fault_client_worker)" as IpcWorker order 3
+end box
+
+box "DFM Process"
+participant DiagnosticFaultMgr order 4
+end box
+
+FaultLib -> FaultLib : read_and_verify_catalog_config_file()
+FaultLib -> FaultLib : calculate_catalog_hashsum()
+
+create IpcWorker
+FaultLib -> IpcWorker : spawn thread + create\niceoryx2 publisher ("dfm/event") +\nEC notification subscriber
+FaultLib -> FaultLib : create iceoryx2 subscriber\n("dfm/event/hash/response")
+
+== Hash Verification (iceoryx2 zero-copy shared memory) ==
+
+FaultLib ->> IpcWorker : mpsc::try_send(\nDiagnosticEvent::Hash(catalog_id, hash))
+IpcWorker ->> DiagnosticFaultMgr : iceoryx2 publish on "dfm/event"
+
+DiagnosticFaultMgr -> DiagnosticFaultMgr : check_hash_sum(path, hash)
+DiagnosticFaultMgr ->> FaultLib : iceoryx2 publish bool\non "dfm/event/hash/response"
+note right of FaultLib
+    FaultLib polls subscriber directly
+    (not via IpcWorker) every 50ms,
+    timeout 500ms.
+end note
+
+alt [["Response received within 500ms"]]
+    FaultLib -> FaultLib : FaultCatalogOk()
+    App <-- FaultLib : Ok(FaultApi)
+else [["Timeout (DFM not responding)"]]
+    App <-- FaultLib : Err(CatalogVerification)
+end
+
+
+@enduml

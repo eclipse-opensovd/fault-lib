@@ -1,0 +1,68 @@
+@startuml
+title Reporting fault by the app
+skinparam ParticipantPadding 20
+
+box "App Process"
+participant App
+participant Reporter
+participant FaultApi
+participant "IpcWorker\n(fault_client_worker)" as IpcWorker
+end box
+box "DFM Process"
+participant DiagFaultMgr
+end box
+
+ref over FaultApi, DiagFaultMgr: [[fault_catalog.svg Fault Catalog Init]]
+
+== Start up ==
+
+App -> FaultApi : FaultApi::try_new(catalog, sink)
+note right of FaultApi
+    This diagram does not consider the case
+    when the fault doesn't exist in catalog
+end note
+
+alt [["Fault ID not in catalog"]]
+
+    App <-- FaultApi : Err(ReporterError::FaultIdNotFound)
+else
+
+    create Reporter
+    App -> Reporter : Reporter::new(&fault_id, config)
+    Reporter -> Reporter : lookup descriptor in catalog
+    App <-- Reporter : Ok(Reporter)
+    App -> App : store/use Reporter
+end
+== App Reporting Fault ==
+
+App -> Reporter : publish(path, record)
+Reporter -> Reporter : check_debouncing()
+
+alt ["Debouncing not passed or enabling conditions not fulfilled"]
+    App <-- Reporter
+else
+    Reporter -> FaultApi : sink.publish(path, record)
+    FaultApi -> FaultApi : create DiagnosticEvent::Fault(path, record)
+    FaultApi ->> IpcWorker : mpsc::try_send(event)\n(bounded channel, capacity=1024)
+    note right of FaultApi
+        Non-blocking enqueue.
+        Returns QueueFull if channel is full.
+    end note
+    App <-- Reporter
+
+    == Async IPC (iceoryx2 zero-copy shared memory) ==
+
+    IpcWorker -> IpcWorker : recv_timeout(50ms)
+    IpcWorker ->> DiagFaultMgr : iceoryx2 publish on "dfm/event"
+    note right of IpcWorker
+        Fire-and-forget: no response from DFM.
+        On transient failure (TransportDown,
+        Timeout, QueueFull): exponential backoff
+        retry (100ms base, 5s cap, max 10 retries,
+        LRU eviction cache of 512 events).
+        Permanent errors are dropped immediately.
+    end note
+    DiagFaultMgr -> DiagFaultMgr : FaultRecordProcessor\n.process_record(path, fault)
+end
+
+@enduml

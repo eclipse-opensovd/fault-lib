@@ -1,0 +1,54 @@
+@startuml
+title Enabling Condition : local status notifications within same app
+skinparam ParticipantPadding 20
+
+box "App Process"
+participant App
+participant "EnablingCondition[entity]" as EC
+participant FaultMonitor
+participant FaultLib
+participant "IpcWorker\n(fault_client_worker)" as IpcWorker
+end box
+
+box "DFM Process"
+participant DiagFaultMgr
+end box
+
+ref over EC, FaultLib: [[new_enable_condition.svg New Enable Condition]]
+
+== Setup ==
+
+App -> FaultLib : create_fault_monitor(["entity"], callback)
+create FaultMonitor
+FaultLib -> FaultMonitor : new(condition_ids, callback)
+FaultMonitor -> FaultLib : register_monitor()
+FaultLib -> FaultLib : EnablingConditionManager.register_monitor()
+note right of FaultLib
+    The FaultLib keeps locally the track which fault
+    monitors are subscribing on which enabling conditions.
+    Monitors are auto-unregistered when dropped.
+end note
+
+== Status Reporting (local fast path) ==
+
+App -> EC : report_status(Active)
+EC -> FaultLib : EnablingConditionManager.report_status()
+FaultLib -> FaultLib : update local state
+FaultMonitor <- FaultLib : callback.on_condition_change(entity, Active)
+App <- FaultMonitor : on_condition_change(entity, Active)
+note right of FaultLib
+    Local monitors are notified immediately
+    (same process, no IPC round-trip).
+    Status deduplication: no-op if status unchanged.
+end note
+
+== Async DFM notification ==
+
+FaultLib ->> IpcWorker : mpsc::try_send(\nEnablingConditionStatusChange\n(entity, Active))
+IpcWorker ->> DiagFaultMgr : iceoryx2 publish\non "dfm/event"
+note right of DiagFaultMgr
+    DFM is notified asynchronously so it can
+    broadcast to other FaultLib instances
+end note
+
+@enduml

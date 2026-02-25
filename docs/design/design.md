@@ -162,32 +162,57 @@ sequenceDiagram
 
 ## Rust API Draft
 
-An example can be found here: [Example Component](../../tests/hvac_component.rs)
+An example can be found here: [Example Component](../examples/hvac_component_design_reference.rs)
 
-Here’s how a component ends up talking to the library:
+Here's how a component ends up talking to the library:
 
-1. Define a handful of `FaultDescriptor`s (the `fault_descriptor!` macro keeps them readable) and park them inside a `'static` `FaultCatalog { id, version, descriptors }`. Components still embed that slice at build time, while the DFM loads the same artifact through `FaultCatalog::from_config` so updates land via JSON/YAML config instead of rebuilding the manager.
-2. Spin up a `FaultApi` with an `Arc<dyn FaultSink>` that knows how to reach the DFM and an `Arc<dyn LogHook>` that mirrors events into your logging stack.
-3. Initialize the singleton FaultApi once (`FaultApi::new(sink, logger)`), then create one `Reporter` per fault ID using `Reporter::new(&catalog, config, &fault_id)`. Each reporter is bound to a single fault and holds static config for that fault.
-4. At runtime, create a mutable `FaultRecord` from the bound `Reporter` using `reporter.create_record()`. Update the record in place (e.g., `add_environment_data`, `update_stage`, `update_severity`).
-5. Publish the record via the bound reporter: `reporter.publish(&record)`. This enqueues the record to the configured FaultSink and is non-blocking for the caller.
+1. Build a `FaultCatalog` using `FaultCatalogBuilder`.  The builder accepts a `FaultCatalogConfig` struct, a JSON string, or a JSON file path.  Each `FaultDescriptor` is a plain struct literal with fields for ID, name, category, severity, compliance tags, and optional debounce/reset policies.
+2. Initialise the singleton `FaultApi` once via `FaultApi::new(catalog)` (or `try_new` for the fallible variant).  This creates the IPC sink to the DFM and stores the catalog in process-global state.  Optionally register a `LogHook` via `FaultApi::set_log_hook(hook)` before creating reporters.
+3. Create one `Reporter` per fault ID using `Reporter::new(&fault_id, config)` (via the `ReporterApi` trait).  Each reporter looks up its descriptor in the global catalog and binds the IPC sink — callers never handle the sink directly.
+4. At runtime, create a `FaultRecord` from the bound reporter: `reporter.create_record(LifecycleStage::Failed)`.  The lifecycle stage is set at creation and the timestamp is captured automatically.
+5. Publish the record via the bound reporter: `reporter.publish("service/path", record)`.  This enqueues the record to the IPC sink and is non-blocking for the caller.
 
-Each `FaultRecord` contains only runtime-mutable data (fault_id, time, severity, source, lifecycle_phase, stage, environment_data). All static configuration (name, default severity, compliance, debounce, reset, etc.) lives in the `FaultDescriptor` held by the `Reporter`.
+Each `FaultRecord` contains only runtime data (id, time, source, lifecycle_phase, lifecycle_stage, env_data). All static configuration (name, severity, compliance, debounce, reset, etc.) lives in the `FaultDescriptor` held by the `Reporter` and is not sent over IPC.
 
 Separate traits are used for logging and fault reporting mainly due to separation of concerns (transport to DFM vs. observability (logging)).
-Additional reasons include: different failure domains (IPC vs logging), different performance expactations, user-control and clarity (maybe a logging system is already used directly by the user) and cleaner mocking of transport (just mock faultsink trait).
+Additional reasons include: different failure domains (IPC vs logging), different performance expectations, user-control and clarity (maybe a logging system is already used directly by the user) and cleaner mocking of transport (just mock `FaultSinkApi` trait).
 
 ## Design Decisions & Trade-offs
 
-- **Static catalogs + runtime config:** Components still ship `'static` descriptors for zero-cost lookup, while the DFM consumes the same artifact via `FaultCatalog::from_config` so policy changes land via JSON/YAML config instead of a rebuild. This keeps deployment fast with only a light runtime copy cost on the DFM side.
+- **Builder-based catalogs + runtime config:** Components build `FaultCatalog` via `FaultCatalogBuilder` (from a `FaultCatalogConfig`, JSON string, or JSON file).  The DFM loads the same artifact so policy changes land via config updates instead of a rebuild.
 - **Minimal runtime records:** `FaultRecord` contains only runtime-mutable data. All static configuration (descriptor, debounce, compliance, etc.) is held by the `Reporter` and not sent over IPC.
-- **Explicit lifecycle states (test-centric):** `FaultLifecycleStage` uses `NotTested`, `PreFailed`, `Failed`, `PrePassed`, `Passed` to track raw test outcomes and debounce stabilization. DTC lifecycle (pending, confirmed, aging) is not represented here; it is derived by the DFM from these stages.
-- **Non-blocking publish path:** `Reporter::publish` enqueues the record to the FaultSink and returns immediately; it does not block on DFM or transport.
+- **Explicit lifecycle states (test-centric):** `LifecycleStage` uses `NotTested`, `PreFailed`, `Failed`, `PrePassed`, `Passed` to track raw test outcomes and debounce stabilization. DTC lifecycle (pending, confirmed, aging) is not represented here; it is derived by the DFM from these stages.
+- **Symmetric IPC abstraction:** The reporter side uses `FaultSinkApi` to send events; the DFM side consumes them through `DfmTransport`. Both are traits with default iceoryx2 implementations (`FaultManagerSink` / `Iceoryx2Transport`) and in-memory test doubles, so integration tests can run without shared-memory infrastructure.
+- **Non-blocking publish path:** `Reporter::publish` enqueues the record to the `FaultSinkApi` and returns immediately; it does not block on DFM or transport.
 - **Declarative policies:** Debounce and aging (reset) logic ride on enums (`DebounceMode`, `ResetTrigger`) to handle typical cases. Debounce variants: `CountWithinWindow { min_count, window }`, `HoldTime { duration }`, `EdgeWithCooldown { cooldown }`, `CountThreshold { min_count }`. Reset triggers: `OperationCycles { kind, min_cycles, cycle_ref }`, `StableFor(duration)`, `ToolOnly`. `cycle_ref` links the aging policy to a concrete cycle counter identity (e.g. `"ignition.main"`, `"drive.standard"`) so the DFM can correlate counts from different domains. Clarification: Debouncing can occur in Fault Lib and/or DFM (if central aggregation needed) while aging (reset) is performed in DFM.
-- **Panic on missing descriptors:** If a caller asks for a fault that isn’t in the catalog we `expect(...)` and crash. That flushes out drift early, so production flows should generate the catalog and component code together.
+- **Panic on missing descriptors:** If a caller asks for a fault that isn't in the catalog we `expect(...)` and crash. That flushes out drift early, so production flows should generate the catalog and component code together.
 
 ## Open Topics
 
 Open Topics to be addressed during development:
 
-- [ ] define time source for faults and fault lib. Time source can be from application, from fault lib or both.
+- [ ] **Define time source for faults and fault lib.**
+  - **Current state:** The library uses `std::time::SystemTime::now()` (wall-clock)
+    to timestamp fault records (`reporter.rs:create_record`). The
+    `duration_since(UNIX_EPOCH)` call uses `unwrap_or_default()`, which means a
+    pre-epoch clock (e.g. after a severe NTP correction) silently produces
+    `IpcTimestamp { seconds_since_epoch: 0, nanoseconds: 0 }` - an epoch-zero
+    timestamp indistinguishable from "no timestamp".
+  - **Implications:**
+    - **NTP drift/jumps:** `SystemTime` is not monotonic. NTP step corrections
+      can cause duplicate or out-of-order timestamps across fault records.
+    - **Clock set before epoch:** The `unwrap_or_default()` fallback silently
+      zeros the timestamp instead of signaling an error.
+    - **Cross-ECU ordering:** Wall-clock timestamps from different ECUs are not
+      comparable without a shared time synchronization protocol.
+  - **Why this is an open point:** Automotive diagnostics often require monotonic
+    or synchronized time bases (e.g., ECU uptime, AUTOSAR `StbM` time) to
+    guarantee consistent ordering across ECUs and to survive clock corrections.
+    Using `SystemTime` is sufficient for prototyping but may violate ordering
+    guarantees in production.
+  - **Decision needed:** Should the timestamp be (a) provided by the calling
+    application, (b) sourced from a configurable `TimeProvider` trait inside
+    fault-lib, or (c) a combination (library default + optional override per
+    report)? The chosen approach must work across IPC boundaries (`IpcTimestamp`
+    is already `#[repr(C)]` and time-source agnostic).
+  - **Decision owner:** Project architect / platform team.

@@ -1,0 +1,83 @@
+@startuml
+title DFM Query/Clear IPC Protocol
+skinparam ParticipantPadding 20
+
+box "External Process\n(e.g. OpenSOVD adapter)"
+participant "Diagnostic\nClient" as Client
+participant Iceoryx2DfmQuery
+end box
+box "DFM Process"
+participant "DfmQueryServer\n(polled in DFM loop)" as Server
+participant SovdFaultManager
+participant SovdFaultStorage
+end box
+
+== Setup ==
+
+note over Server
+    DfmQueryServer created inside
+    fault_lib_receiver_thread when
+    enable_query_server = true.
+    Service: "dfm/query" (request-response).
+end note
+
+Client -> Iceoryx2DfmQuery : new()\nconnects to "dfm/query" service
+
+== Query: GetAllFaults ==
+
+Client -> Iceoryx2DfmQuery : get_all_faults(entity_path)
+Iceoryx2DfmQuery -> Iceoryx2DfmQuery : path -> LongString (128B)\n(rejects if too long)
+Iceoryx2DfmQuery ->> Server : iceoryx2 send\nDfmQueryRequest::GetAllFaults(path)
+Iceoryx2DfmQuery -> Iceoryx2DfmQuery : poll response\n(1s timeout, 10ms interval)
+
+Server -> Server : poll() receives request
+Server -> SovdFaultManager : get_all_faults(path)
+SovdFaultManager -> SovdFaultStorage : read fault states
+SovdFaultManager --> Server : Vec<SovdFault>
+Server -> Server : convert to IpcSovdFault\n(lossy: String->ShortString,\nHashMap omitted)
+Server ->> Iceoryx2DfmQuery : DfmQueryResponse::FaultList\n(max 64 faults per response)
+
+Iceoryx2DfmQuery -> Iceoryx2DfmQuery : convert IpcSovdFault -> SovdFault
+Client <-- Iceoryx2DfmQuery : Ok(Vec<SovdFault>)
+
+== Query: GetFault ==
+
+Client -> Iceoryx2DfmQuery : get_fault(entity_path, fault_code)
+Iceoryx2DfmQuery ->> Server : DfmQueryRequest::GetFault(path, code)
+
+Server -> SovdFaultManager : get_fault(path, code)
+
+alt Fault found
+    SovdFaultManager --> Server : Ok((SovdFault, env_data))
+    Server ->> Iceoryx2DfmQuery : DfmQueryResponse::SingleFault\n(IpcSovdFault, IpcEnvData)
+    Client <-- Iceoryx2DfmQuery : Ok((SovdFault, env_data))
+else Fault not found
+    SovdFaultManager --> Server : Err(NotFound)
+    Server ->> Iceoryx2DfmQuery : DfmQueryResponse::Error\n(DfmQueryError::NotFound)
+    Client <-- Iceoryx2DfmQuery : Err(Error::NotFound)
+end
+
+== Clear: DeleteAllFaults ==
+
+Client -> Iceoryx2DfmQuery : delete_all_faults(entity_path)
+Iceoryx2DfmQuery ->> Server : DfmQueryRequest::DeleteAllFaults(path)
+
+Server -> SovdFaultManager : delete_all_faults(path)
+SovdFaultManager -> SovdFaultStorage : clear all fault states
+SovdFaultManager --> Server : Ok(())
+Server ->> Iceoryx2DfmQuery : DfmQueryResponse::Ok
+Client <-- Iceoryx2DfmQuery : Ok(())
+
+== Error: Storage failure ==
+
+Client -> Iceoryx2DfmQuery : delete_fault(path, code)
+Iceoryx2DfmQuery ->> Server : DfmQueryRequest::DeleteFault(path, code)
+Server -> SovdFaultManager : delete_fault(path, code)
+SovdFaultManager -> SovdFaultStorage : delete fault state
+SovdFaultStorage --> SovdFaultManager : Err(StorageError)
+SovdFaultManager --> Server : Err(Storage(msg))
+Server -> Server : truncate msg to ShortString (64B)
+Server ->> Iceoryx2DfmQuery : DfmQueryResponse::Error\n(DfmQueryError::StorageError)
+Client <-- Iceoryx2DfmQuery : Err(Error::Storage(msg))
+
+@enduml
