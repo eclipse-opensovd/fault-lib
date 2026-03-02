@@ -37,26 +37,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust nightly with Miri
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly-2025-07-14
           components: miri, rust-src
-
-      - name: Cache cargo registry & target
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-miri-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-miri-
 
       - name: Run Miri
         # --exclude integration_tests: integration tests use iceoryx2 IPC (shared memory
         #   + system calls) which Miri cannot emulate — they'd fail with unsupported-syscall errors.
         # --exclude xtask: build helper binary with no unsafe code; excluding it avoids
         #   pulling in proc-macro and build-script dependencies that Miri cannot interpret.
-        run: cargo +nightly-2025-07-14 miri test --workspace --exclude integration_tests --exclude xtask
+        run: cargo miri test --workspace --exclude integration_tests --exclude xtask

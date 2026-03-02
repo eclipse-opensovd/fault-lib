@@ -35,10 +35,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust nightly with rustfmt
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly-2025-07-14
           components: rustfmt
 
       - name: Check formatting
