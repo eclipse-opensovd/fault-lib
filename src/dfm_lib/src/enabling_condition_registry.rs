@@ -1,24 +1,24 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! DFM-side registry for enabling conditions.
 //!
 //! Tracks registered enabling conditions and their current statuses.
 //! When a status changes, the registry notifies the communicator to
-//! broadcast the change to all FaultLib subscribers.
+//! broadcast the change to all `FaultLib` subscribers.
 
 use common::enabling_condition::EnablingConditionStatus;
-use log::{debug, info, warn};
 use std::collections::HashMap;
+use tracing::{debug, info, warn};
 
 /// DFM-side registry of enabling conditions.
 ///
@@ -36,8 +36,11 @@ impl Default for EnablingConditionRegistry {
 }
 
 impl EnablingConditionRegistry {
+    #[must_use]
     pub fn new() -> Self {
-        Self { conditions: HashMap::new() }
+        Self {
+            conditions: HashMap::new(),
+        }
     }
 
     /// Register a new enabling condition.
@@ -59,7 +62,11 @@ impl EnablingConditionRegistry {
     ///
     /// Returns `Some(new_status)` if the status actually changed (for
     /// notification dispatch), `None` if no change occurred.
-    pub fn update_status(&mut self, entity: &str, status: EnablingConditionStatus) -> Option<EnablingConditionStatus> {
+    pub fn update_status(
+        &mut self,
+        entity: &str,
+        status: EnablingConditionStatus,
+    ) -> Option<EnablingConditionStatus> {
         if let Some(current) = self.conditions.get_mut(entity) {
             if *current == status {
                 debug!("Enabling condition '{entity}' status unchanged: {status:?}");
@@ -77,21 +84,25 @@ impl EnablingConditionRegistry {
     }
 
     /// Get the current status of an enabling condition.
+    #[must_use]
     pub fn get_status(&self, entity: &str) -> Option<EnablingConditionStatus> {
         self.conditions.get(entity).copied()
     }
 
     /// Get all registered conditions and their statuses.
+    #[must_use]
     pub fn all_conditions(&self) -> &HashMap<String, EnablingConditionStatus> {
         &self.conditions
     }
 
     /// Number of registered enabling conditions.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.conditions.len()
     }
 
     /// Whether there are no registered enabling conditions.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.conditions.is_empty()
     }
@@ -115,7 +126,10 @@ mod tests {
         let status = reg.register("vehicle.speed.valid");
         assert_eq!(status, EnablingConditionStatus::Inactive);
         assert_eq!(reg.len(), 1);
-        assert_eq!(reg.get_status("vehicle.speed.valid"), Some(EnablingConditionStatus::Inactive));
+        assert_eq!(
+            reg.get_status("vehicle.speed.valid"),
+            Some(EnablingConditionStatus::Inactive)
+        );
     }
 
     #[test]

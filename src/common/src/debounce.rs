@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 use alloc::collections::VecDeque;
 use core::time::Duration;
 use iceoryx2::prelude::*;
@@ -33,11 +33,15 @@ impl IpcDuration {
     /// Maximum valid value for the `nanos` field.
     pub const MAX_NANOS: u32 = 999_999_999;
 
-    /// Validates that the nanoseconds field is within the documented range (0..=999_999_999).
+    /// Validates that the nanoseconds field is within the documented range (`0..=999_999_999`).
     ///
     /// Note: `Duration::new()` does not panic on out-of-range nanos - it carries
     /// excess into seconds. This method enforces the stricter invariant documented
     /// on the `nanos` field for IPC trust boundaries.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the `nanos` field exceeds `MAX_NANOS` (999,999,999).
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.nanos > Self::MAX_NANOS {
             return Err("IpcDuration nanoseconds out of range (max: 999_999_999)");
@@ -86,11 +90,16 @@ pub enum DebounceMode {
 
 impl DebounceMode {
     /// Create a boxed [`Debounce`] implementation matching this mode.
+    #[must_use]
     pub fn into_debouncer(self) -> Box<dyn Debounce> {
         match self {
-            DebounceMode::CountWithinWindow { min_count, window } => Box::new(CountWithinWindow::new(min_count, window.into())),
+            DebounceMode::CountWithinWindow { min_count, window } => {
+                Box::new(CountWithinWindow::new(min_count, window.into()))
+            }
             DebounceMode::HoldTime { duration } => Box::new(HoldTime::new(duration.into())),
-            DebounceMode::EdgeWithCooldown { cooldown } => Box::new(EdgeWithCooldown::new(cooldown.into())),
+            DebounceMode::EdgeWithCooldown { cooldown } => {
+                Box::new(EdgeWithCooldown::new(cooldown.into()))
+            }
         }
     }
 }
@@ -129,6 +138,7 @@ pub struct CountWithinWindow {
 
 impl CountWithinWindow {
     /// Create a new count-within-window debouncer.
+    #[must_use]
     pub fn new(min_count: u32, window: Duration) -> Self {
         Self {
             min_count,
@@ -140,7 +150,11 @@ impl CountWithinWindow {
 
 impl Debounce for CountWithinWindow {
     fn on_event(&mut self, now: Instant) -> bool {
-        while self.occurrences.front().is_some_and(|&ts| now.duration_since(ts) > self.window) {
+        while self
+            .occurrences
+            .front()
+            .is_some_and(|&ts| now.duration_since(ts) > self.window)
+        {
             self.occurrences.pop_front();
         }
         self.occurrences.push_back(now);
@@ -189,8 +203,12 @@ pub struct HoldTime {
 
 impl HoldTime {
     /// Create a new hold-time debouncer.
+    #[must_use]
     pub fn new(duration: Duration) -> Self {
-        Self { duration, start_time: None }
+        Self {
+            duration,
+            start_time: None,
+        }
     }
 }
 
@@ -221,8 +239,12 @@ pub struct EdgeWithCooldown {
 
 impl EdgeWithCooldown {
     /// Create a new edge-with-cooldown debouncer.
+    #[must_use]
     pub fn new(cooldown: Duration) -> Self {
-        Self { cooldown, last_report: None }
+        Self {
+            cooldown,
+            last_report: None,
+        }
     }
 }
 
@@ -406,7 +428,7 @@ mod tests {
         let t0 = Instant::now();
         // Push 10 events — all within the window
         for i in 0..10u32 {
-            d.on_event(t0 + Duration::from_millis(i as u64));
+            d.on_event(t0 + Duration::from_millis(u64::from(i)));
         }
         // Deque should never grow beyond min_count (3)
         assert!(
@@ -427,7 +449,7 @@ mod tests {
         assert!(d.on_event(t0 + Duration::from_secs(2)));
         // Many more events, deque stays bounded
         for i in 3..100u32 {
-            assert!(d.on_event(t0 + Duration::from_millis(2000 + i as u64)));
+            assert!(d.on_event(t0 + Duration::from_millis(2000 + u64::from(i))));
         }
         assert!(d.occurrences.len() <= 3);
     }

@@ -1,16 +1,16 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
-use crate::fault::*;
+use crate::fault::{FaultDescriptor, FaultId};
 use crate::types::LongString;
 use alloc::borrow::Cow;
 use sha2::{Digest, Sha256};
@@ -70,7 +70,13 @@ impl FaultCatalog {
     /// Prefer [`FaultCatalogBuilder`] for constructing catalogs from JSON
     /// or [`FaultCatalogConfig`] structs — it handles hashing and
     /// duplicate-ID detection automatically.
-    pub fn new(id: Cow<'static, str>, version: u64, descriptors: FaultDescriptorsMap, config_hash: FaultCatalogHash) -> Self {
+    #[must_use]
+    pub fn new(
+        id: Cow<'static, str>,
+        version: u64,
+        descriptors: FaultDescriptorsMap,
+        config_hash: FaultCatalogHash,
+    ) -> Self {
         Self {
             id,
             version,
@@ -82,15 +88,19 @@ impl FaultCatalog {
     /// SHA-256 hash of the canonical JSON representation of this catalog's
     /// configuration.  Used during the DFM handshake to detect version drift
     /// between reporter and manager.
+    #[must_use]
     pub fn config_hash(&self) -> &[u8] {
         &self.config_hash
     }
 
     /// Try to get the catalog id as a fixed-size IPC-safe `LongString`.
     ///
+    /// # Errors
+    ///
     /// Returns `CatalogBuildError::IdTooLong` if the id exceeds 128 bytes.
     pub fn try_id(&self) -> Result<LongString, CatalogBuildError> {
-        LongString::try_from(self.id.as_bytes()).map_err(|_| CatalogBuildError::IdTooLong(self.id.to_string()))
+        LongString::try_from(self.id.as_bytes())
+            .map_err(|_| CatalogBuildError::IdTooLong(self.id.to_string()))
     }
 
     /// Get the catalog id as a `LongString`.
@@ -100,6 +110,7 @@ impl FaultCatalog {
     /// Panics if the id exceeds 128 bytes. Use [`try_id`](Self::try_id)
     /// for fallible access.
     #[allow(clippy::expect_used)]
+    #[must_use]
     pub fn id(&self) -> LongString {
         self.try_id().expect("Fault catalog id too long")
     }
@@ -108,6 +119,7 @@ impl FaultCatalog {
     ///
     /// Returns `None` if the catalog does not contain a descriptor with the
     /// given ID.
+    #[must_use]
     pub fn descriptor(&self, id: &FaultId) -> Option<&FaultDescriptor> {
         self.descriptors.get(id)
     }
@@ -120,11 +132,13 @@ impl FaultCatalog {
     }
 
     /// Number of descriptors in this catalog, useful for build-time validation.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.descriptors.len()
     }
 
     /// Returns `true` if this catalog contains no descriptors.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.descriptors.is_empty()
     }
@@ -174,9 +188,9 @@ pub struct FaultCatalogBuilder<'a> {
 ///
 /// # Returns
 ///
-/// - `Self` - FaultCatalogBuilder structure.
+/// - `Self` - `FaultCatalogBuilder` structure.
 ///
-impl<'a> Default for FaultCatalogBuilder<'a> {
+impl Default for FaultCatalogBuilder<'_> {
     fn default() -> Self {
         Self {
             input: FaultCatalogBuilderInput::None,
@@ -188,7 +202,8 @@ impl<'a> FaultCatalogBuilder<'a> {
     /// Fault catalog builder constructor
     ///
     /// # Return Values
-    ///   * FaultCatalogBuilder instance
+    ///   * `FaultCatalogBuilder` instance
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -205,7 +220,7 @@ impl<'a> FaultCatalogBuilder<'a> {
         Ok(())
     }
 
-    /// Configure 'FaultCatalog' with given json configuration string.
+    /// Configure `FaultCatalog` with given json configuration string.
     ///
     ///  You cannot use this function in case the configuration file has been passed before
     /// # Arguments
@@ -279,6 +294,7 @@ impl<'a> FaultCatalogBuilder<'a> {
     /// Panics if configuration is missing, JSON is invalid, or the file cannot be read.
     /// Use [`try_build`](Self::try_build) for the fallible version.
     #[allow(clippy::expect_used)]
+    #[must_use]
     pub fn build(self) -> FaultCatalog {
         self.try_build().expect("Failed to build FaultCatalog")
     }
@@ -302,7 +318,12 @@ impl<'a> FaultCatalogBuilder<'a> {
             }
             descriptors.insert(id, descriptor);
         }
-        Ok(FaultCatalog::new(cfg_struct.id, cfg_struct.version, descriptors, hash_sum))
+        Ok(FaultCatalog::new(
+            cfg_struct.id,
+            cfg_struct.version,
+            descriptors,
+            hash_sum,
+        ))
     }
 
     /// Fallible version: generates fault catalog from JSON string.
@@ -327,7 +348,10 @@ impl<'a> FaultCatalogBuilder<'a> {
     /// Returns a [`CatalogBuildError`] if JSON serialisation fails.
     fn calc_config_hash(cfg: &FaultCatalogConfig) -> Result<Vec<u8>, CatalogBuildError> {
         let canon = serde_json::to_string(cfg)?;
-        Ok(Sha256::new().chain_update(canon.as_bytes()).finalize().to_vec())
+        Ok(Sha256::new()
+            .chain_update(canon.as_bytes())
+            .finalize()
+            .to_vec())
     }
 }
 
@@ -336,6 +360,7 @@ impl<'a> FaultCatalogBuilder<'a> {
 mod tests {
     use super::*;
 
+    use crate::fault::{ComplianceVec, FaultSeverity, FaultType};
     use crate::types::to_static_short_string;
 
     fn make_descriptor(id: FaultId) -> FaultDescriptor {
@@ -358,11 +383,20 @@ mod tests {
         let config = FaultCatalogConfig {
             id: "test".into(),
             version: 1,
-            faults: vec![make_descriptor(FaultId::Numeric(42)), make_descriptor(FaultId::Numeric(42))],
+            faults: vec![
+                make_descriptor(FaultId::Numeric(42)),
+                make_descriptor(FaultId::Numeric(42)),
+            ],
         };
-        let result = FaultCatalogBuilder::new().cfg_struct(config).unwrap().try_build();
+        let result = FaultCatalogBuilder::new()
+            .cfg_struct(config)
+            .unwrap()
+            .try_build();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), CatalogBuildError::DuplicateFaultId(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            CatalogBuildError::DuplicateFaultId(_)
+        ));
     }
 
     #[test]
@@ -376,7 +410,10 @@ mod tests {
                 make_descriptor(FaultId::Text(to_static_short_string("fault_a").unwrap())),
             ],
         };
-        let result = FaultCatalogBuilder::new().cfg_struct(config).unwrap().try_build();
+        let result = FaultCatalogBuilder::new()
+            .cfg_struct(config)
+            .unwrap()
+            .try_build();
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 3);
     }
@@ -391,7 +428,10 @@ mod tests {
                 make_descriptor(FaultId::Text(to_static_short_string("1").unwrap())),
             ],
         };
-        let result = FaultCatalogBuilder::new().cfg_struct(config).unwrap().try_build();
+        let result = FaultCatalogBuilder::new()
+            .cfg_struct(config)
+            .unwrap()
+            .try_build();
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 2);
     }

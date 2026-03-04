@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 use crate::enabling_condition::EnablingConditionStatus;
 use crate::fault::FaultRecord;
@@ -51,11 +51,23 @@ pub enum DiagnosticEvent {
 }
 
 /// Convert a byte-like value into a [`ShortString`] (64-byte static string).
-pub fn to_static_short_string<T: AsRef<[u8]>>(input: T) -> Result<ShortString, StringModificationError> {
+///
+/// # Errors
+///
+/// Returns [`StringModificationError`] if the input exceeds 64 bytes.
+pub fn to_static_short_string<T: AsRef<[u8]>>(
+    input: T,
+) -> Result<ShortString, StringModificationError> {
     StaticString::try_from(input.as_ref())
 }
 
 /// Convert a byte-like value into a [`LongString`] (128-byte static string).
-pub fn to_static_long_string<T: AsRef<[u8]>>(input: T) -> Result<LongString, StringModificationError> {
+///
+/// # Errors
+///
+/// Returns [`StringModificationError`] if the input exceeds 128 bytes.
+pub fn to_static_long_string<T: AsRef<[u8]>>(
+    input: T,
+) -> Result<LongString, StringModificationError> {
     StaticString::try_from(input.as_ref())
 }

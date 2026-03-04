@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! Core processing logic for incoming fault reports.
 //!
@@ -28,10 +28,10 @@ use common::debounce::Debounce;
 use common::fault;
 use common::fault::{ComplianceTag, FaultId, LifecycleStage};
 use common::types::{LongString, Sha256Vec};
-use log::{error, info, trace, warn};
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::Instant;
+use tracing::{error, info, trace, warn};
 
 /// Unique key for per-fault debounce state in DFM.
 /// Combines source path (IPC identity) and fault ID so that each
@@ -69,7 +69,11 @@ pub struct FaultRecordProcessor<S: SovdFaultStateStorage> {
 }
 
 impl<S: SovdFaultStateStorage> FaultRecordProcessor<S> {
-    pub fn new(storage: Arc<S>, catalog_registry: Arc<FaultCatalogRegistry>, cycle_tracker: Arc<RwLock<OperationCycleTracker>>) -> Self {
+    pub fn new(
+        storage: Arc<S>,
+        catalog_registry: Arc<FaultCatalogRegistry>,
+        cycle_tracker: Arc<RwLock<OperationCycleTracker>>,
+    ) -> Self {
         let aging_manager = AgingManager::new(Arc::clone(&cycle_tracker));
         Self {
             storage,
@@ -82,6 +86,7 @@ impl<S: SovdFaultStateStorage> FaultRecordProcessor<S> {
         }
     }
 
+    #[tracing::instrument(skip(self, record))]
     pub fn process_record(&mut self, path: &LongString, record: &fault::FaultRecord) {
         let path_str = path.to_string();
         let key = FaultKey::new(&path_str, &record.id);
@@ -97,7 +102,7 @@ impl<S: SovdFaultStateStorage> FaultRecordProcessor<S> {
         }
 
         // Handle lifecycle transition — reset debounce on Passed→Failed etc.
-        self.handle_lifecycle_transition(&key, &record.lifecycle_stage);
+        self.handle_lifecycle_transition(&key, record.lifecycle_stage);
 
         // Always track incoming lifecycle stage for transition detection.
         // Updated BEFORE debounce check so a transition is consumed once
@@ -106,12 +111,20 @@ impl<S: SovdFaultStateStorage> FaultRecordProcessor<S> {
 
         // Apply manager-side debounce filter
         if !self.check_debounce(&key, &record.id) {
-            trace!("Fault {:?} from {:?} suppressed by manager-side debounce", record.id, path_str);
+            trace!(
+                "Fault {:?} from {:?} suppressed by manager-side debounce",
+                record.id, path_str
+            );
             return;
         }
 
         // Read existing state to preserve counters and latched flags across events.
-        let mut state = self.storage.get(&path_str, &record.id).ok().flatten().unwrap_or_default();
+        let mut state = self
+            .storage
+            .get(&path_str, &record.id)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
 
         // Resolve whether this fault has an aging/reset policy configured.
         let reset_policy = self.lookup_reset_policy(&key, &record.id);
@@ -185,14 +198,24 @@ impl<S: SovdFaultStateStorage> FaultRecordProcessor<S> {
             && let Some(aging_state) = self.aging_states.get_mut(&key)
             && self.aging_manager.should_reset(policy, aging_state)
         {
-            info!("Aging reset triggered for fault {:?} from {:?}", record.id, path_str);
+            info!(
+                "Aging reset triggered for fault {:?} from {:?}",
+                record.id, path_str
+            );
             self.aging_manager.apply_reset(aging_state, &mut state);
         }
 
         // Preserve diagnostic env_data from failure stages — a Passed/PrePassed
         // event must not overwrite the env_data captured during the fault.
-        if matches!(record.lifecycle_stage, fault::LifecycleStage::Failed | fault::LifecycleStage::PreFailed) {
-            state.env_data = record.env_data.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        if matches!(
+            record.lifecycle_stage,
+            fault::LifecycleStage::Failed | fault::LifecycleStage::PreFailed
+        ) {
+            state.env_data = record
+                .env_data
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
         }
         match self.storage.put(&path_str, &record.id, state) {
             Ok(()) => info!("Fault ID {:?} stored", record.id),
@@ -212,7 +235,11 @@ impl<S: SovdFaultStateStorage> FaultRecordProcessor<S> {
     /// Lazily looks up the debouncer for a fault key, creating it from
     /// the catalog's `manager_side_debounce` config on first access.
     /// Returns `None` when no manager-side debounce is configured.
-    fn get_or_create_debouncer(&mut self, key: &FaultKey, fault_id: &FaultId) -> Option<&mut Box<dyn Debounce>> {
+    fn get_or_create_debouncer(
+        &mut self,
+        key: &FaultKey,
+        fault_id: &FaultId,
+    ) -> Option<&mut Box<dyn Debounce>> {
         if self.debouncers.contains_key(key) {
             return self.debouncers.get_mut(key);
         }
@@ -231,9 +258,9 @@ impl<S: SovdFaultStateStorage> FaultRecordProcessor<S> {
 
     /// Detects lifecycle transitions that should reset the debouncer,
     /// e.g. when a fault clears (Passed) and then re-occurs (Failed).
-    fn handle_lifecycle_transition(&mut self, key: &FaultKey, new_stage: &LifecycleStage) {
+    fn handle_lifecycle_transition(&mut self, key: &FaultKey, new_stage: LifecycleStage) {
         if let Some(last_stage) = self.last_stages.get(key)
-            && Self::should_reset_debounce(last_stage, new_stage)
+            && Self::should_reset_debounce(*last_stage, new_stage)
             && let Some(debouncer) = self.debouncers.get_mut(key)
         {
             trace!(
@@ -246,9 +273,12 @@ impl<S: SovdFaultStateStorage> FaultRecordProcessor<S> {
 
     /// Transitions that warrant a debounce reset: the fault was cleared
     /// and is now re-entering a failure state.
-    fn should_reset_debounce(last: &LifecycleStage, new: &LifecycleStage) -> bool {
-        use LifecycleStage::*;
-        matches!((last, new), (Passed, Failed) | (Passed, PreFailed) | (NotTested, Failed))
+    fn should_reset_debounce(last: LifecycleStage, new: LifecycleStage) -> bool {
+        use LifecycleStage::{Failed, NotTested, Passed, PreFailed};
+        matches!(
+            (last, new),
+            (Passed | NotTested, Failed) | (Passed, PreFailed)
+        )
     }
 
     /// Mark the aging state for a fault as active (failure re-occurred).
@@ -256,7 +286,10 @@ impl<S: SovdFaultStateStorage> FaultRecordProcessor<S> {
     fn mark_aging_active(&mut self, key: &FaultKey) {
         // Recover from RwLock poisoning — data integrity is more important
         // than propagating a panic from an unrelated thread.
-        let tracker = self.cycle_tracker.read().unwrap_or_else(|e| e.into_inner());
+        let tracker = self
+            .cycle_tracker
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let aging_state = self.aging_states.entry(key.clone()).or_default();
         aging_state.mark_active(&tracker);
     }
@@ -272,16 +305,18 @@ impl<S: SovdFaultStateStorage> FaultRecordProcessor<S> {
         let Some(descriptor) = catalog.descriptor(fault_id) else {
             return false;
         };
-        descriptor
-            .compliance
-            .iter()
-            .any(|tag| matches!(tag, ComplianceTag::SafetyCritical | ComplianceTag::EmissionRelevant))
+        descriptor.compliance.iter().any(|tag| {
+            matches!(
+                tag,
+                ComplianceTag::SafetyCritical | ComplianceTag::EmissionRelevant
+            )
+        })
     }
 
     /// Handle a "clear DTC" operation for a specific path.
     ///
     /// ISO 14229: resets `*_since_last_clear` flags for all faults at this path.
-    /// This is triggered by diagnostic tool commands (UDS $14 ClearDTC).
+    /// This is triggered by diagnostic tool commands (UDS $14 `ClearDTC`).
     pub fn clear_dtc(&self, path: &str) {
         match self.storage.get_all(path) {
             Ok(faults) => {
@@ -318,34 +353,36 @@ impl<S: SovdFaultStateStorage> FaultRecordProcessor<S> {
     }
 
     /// Look up `manager_side_reset` policy from the fault catalog for this key.
-    fn lookup_reset_policy(&self, key: &FaultKey, fault_id: &FaultId) -> Option<common::config::ResetPolicy> {
+    fn lookup_reset_policy(
+        &self,
+        key: &FaultKey,
+        fault_id: &FaultId,
+    ) -> Option<common::config::ResetPolicy> {
         let catalog = self.catalog_registry.get(&key.source)?;
         let descriptor = catalog.descriptor(fault_id)?;
         descriptor.manager_side_reset.clone()
     }
 
     /// Provide read access to the shared operation cycle tracker,
-    /// allowing external callers (e.g. DiagnosticFaultManager) to
+    /// allowing external callers (e.g. `DiagnosticFaultManager`) to
     /// advance operation cycles.
+    #[must_use]
     pub fn cycle_tracker(&self) -> &Arc<RwLock<OperationCycleTracker>> {
         &self.cycle_tracker
     }
 
     pub fn check_hash_sum(&self, path: &LongString, hash_sum: &Sha256Vec) -> bool {
-        match self.catalog_registry.get(&path.to_string()) {
-            Some(catalog) => {
-                let ret = catalog.config_hash() == hash_sum.to_vec();
-                if !ret {
-                    error!("Fault catalog hash sum error for {:?}", path.to_string());
-                    error!("Expected {:?}", catalog.config_hash());
-                    error!("Received {:?}", hash_sum.to_vec());
-                }
-                ret
+        if let Some(catalog) = self.catalog_registry.get(&path.to_string()) {
+            let ret = catalog.config_hash() == hash_sum.to_vec();
+            if !ret {
+                error!("Fault catalog hash sum error for {:?}", path.to_string());
+                error!("Expected {:?}", catalog.config_hash());
+                error!("Received {:?}", hash_sum.to_vec());
             }
-            None => {
-                error!("Catalog hash sum entity {:?} not found ", path.to_string());
-                false
-            }
+            ret
+        } else {
+            error!("Catalog hash sum entity {:?} not found ", path.to_string());
+            false
         }
     }
 }
@@ -378,7 +415,7 @@ mod processor_tests {
     fn processor_handles_failed_stage() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_registry();
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
 
         let record = make_record(FaultId::Numeric(42), LifecycleStage::Failed);
         let path = make_path("test_entity");
@@ -397,7 +434,7 @@ mod processor_tests {
     fn processor_handles_passed_stage() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_registry();
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
 
         let record = make_record(FaultId::Numeric(42), LifecycleStage::Passed);
         let path = make_path("test_entity");
@@ -408,7 +445,10 @@ mod processor_tests {
 
         let state = state.unwrap();
         assert!(!state.test_failed, "Passed should set test_failed=false");
-        assert!(!state.confirmed_dtc, "Passed should set confirmed_dtc=false");
+        assert!(
+            !state.confirmed_dtc,
+            "Passed should set confirmed_dtc=false"
+        );
     }
 
     /// Processor handles transition from Failed to Passed.
@@ -416,14 +456,17 @@ mod processor_tests {
     fn processor_handles_failed_to_passed_transition() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_registry();
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
         let path = make_path("test_entity");
 
         // First: Failed
         let record_failed = make_record(FaultId::Numeric(42), LifecycleStage::Failed);
         processor.process_record(&path, &record_failed);
 
-        let state = storage.get("test_entity", &FaultId::Numeric(42)).unwrap().unwrap();
+        let state = storage
+            .get("test_entity", &FaultId::Numeric(42))
+            .unwrap()
+            .unwrap();
         assert!(state.test_failed);
         assert!(state.confirmed_dtc);
 
@@ -431,17 +474,20 @@ mod processor_tests {
         let record_passed = make_record(FaultId::Numeric(42), LifecycleStage::Passed);
         processor.process_record(&path, &record_passed);
 
-        let state = storage.get("test_entity", &FaultId::Numeric(42)).unwrap().unwrap();
+        let state = storage
+            .get("test_entity", &FaultId::Numeric(42))
+            .unwrap()
+            .unwrap();
         assert!(!state.test_failed);
         assert!(!state.confirmed_dtc);
     }
 
-    /// Processor handles PreFailed stage correctly.
+    /// Processor handles `PreFailed` stage correctly.
     #[test]
     fn processor_handles_prefailed_stage() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_registry();
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
 
         let record = make_record(FaultId::Numeric(42), LifecycleStage::PreFailed);
         let path = make_path("test_entity");
@@ -452,15 +498,18 @@ mod processor_tests {
         let state = state.unwrap();
         assert!(state.test_failed, "PreFailed should set test_failed=true");
         assert!(state.pending_dtc, "PreFailed should set pending_dtc=true");
-        assert!(!state.confirmed_dtc, "PreFailed should NOT set confirmed_dtc");
+        assert!(
+            !state.confirmed_dtc,
+            "PreFailed should NOT set confirmed_dtc"
+        );
     }
 
-    /// Processor handles PrePassed stage correctly.
+    /// Processor handles `PrePassed` stage correctly.
     #[test]
     fn processor_handles_prepassed_stage() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_registry();
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
 
         let record = make_record(FaultId::Numeric(42), LifecycleStage::PrePassed);
         let path = make_path("test_entity");
@@ -473,12 +522,12 @@ mod processor_tests {
         assert!(!state.pending_dtc, "PrePassed should set pending_dtc=false");
     }
 
-    /// Processor handles NotTested stage correctly.
+    /// Processor handles `NotTested` stage correctly.
     #[test]
     fn processor_handles_nottested_stage() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_registry();
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
 
         let record = make_record(FaultId::Numeric(42), LifecycleStage::NotTested);
         let path = make_path("test_entity");
@@ -530,7 +579,7 @@ mod debounce_tests {
         };
         let registry = make_debounce_registry("test_entity", fault_id.clone(), debounce);
         let storage = Arc::new(InMemoryStorage::new());
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
         let path = make_path("test_entity");
 
         // Events 1 and 2: suppressed (count < min_count)
@@ -550,25 +599,31 @@ mod debounce_tests {
         // Event 3: fires (count == min_count)
         processor.process_record(&path, &record);
         let state = storage.get("test_entity", &fault_id).unwrap();
-        assert!(state.is_some(), "Third event should pass debounce and update storage");
+        assert!(
+            state.is_some(),
+            "Third event should pass debounce and update storage"
+        );
         let state = state.unwrap();
         assert!(state.test_failed);
         assert!(state.confirmed_dtc);
     }
 
-    /// When manager_side_debounce is None, every event passes through.
+    /// When `manager_side_debounce` is None, every event passes through.
     #[test]
     fn dfm_passes_through_without_debounce_config() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_registry(); // No debounce configured
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
         let path = make_path("test_entity");
 
         let record = make_record(FaultId::Numeric(42), LifecycleStage::Failed);
         processor.process_record(&path, &record);
 
         let state = storage.get("test_entity", &FaultId::Numeric(42)).unwrap();
-        assert!(state.is_some(), "Event should pass through when no debounce configured");
+        assert!(
+            state.is_some(),
+            "Event should pass through when no debounce configured"
+        );
         assert!(state.unwrap().test_failed);
     }
 
@@ -583,7 +638,7 @@ mod debounce_tests {
         };
         let registry = make_debounce_registry("test_entity", fault_id.clone(), debounce);
         let storage = Arc::new(InMemoryStorage::new());
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
         let path = make_path("test_entity");
 
         let failed = make_record(fault_id.clone(), LifecycleStage::Failed);
@@ -601,27 +656,39 @@ mod debounce_tests {
         processor.process_record(&path, &passed);
         let state = storage.get("test_entity", &fault_id).unwrap();
         assert!(state.is_some(), "Passed event (3rd) should fire");
-        assert!(!state.unwrap().test_failed, "Passed should clear test_failed");
+        assert!(
+            !state.unwrap().test_failed,
+            "Passed should clear test_failed"
+        );
 
         // Now Failed again: lifecycle transition (Passed->Failed) resets debouncer
         // After reset, counter restarts: event 1 -> suppressed
         processor.process_record(&path, &failed);
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(!state.test_failed, "First Failed after reset should be suppressed; Passed state remains");
+        assert!(
+            !state.test_failed,
+            "First Failed after reset should be suppressed; Passed state remains"
+        );
 
         // Events 2 and 3 after reset
         processor.process_record(&path, &failed);
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(!state.test_failed, "Second Failed after reset should still be suppressed");
+        assert!(
+            !state.test_failed,
+            "Second Failed after reset should still be suppressed"
+        );
 
         processor.process_record(&path, &failed);
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(state.test_failed, "Third Failed after reset should fire (counter reached min_count)");
+        assert!(
+            state.test_failed,
+            "Third Failed after reset should fire (counter reached min_count)"
+        );
         assert!(state.confirmed_dtc);
     }
 
     /// Debounce state is independent per source (per-app).
-    /// app1 reaching min_count does not affect app2's counter.
+    /// app1 reaching `min_count` does not affect app2's counter.
     #[test]
     fn dfm_debounce_is_per_source() {
         let fault_id = FaultId::Numeric(300);
@@ -631,7 +698,7 @@ mod debounce_tests {
         };
         let registry = make_two_source_debounce_registry(fault_id.clone(), debounce);
         let storage = Arc::new(InMemoryStorage::new());
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
         let path1 = make_path("app1");
         let path2 = make_path("app2");
 
@@ -639,11 +706,17 @@ mod debounce_tests {
 
         // app1: event 1 -> suppressed
         processor.process_record(&path1, &record);
-        assert!(storage.get("app1", &fault_id).unwrap().is_none(), "app1 first event should be suppressed");
+        assert!(
+            storage.get("app1", &fault_id).unwrap().is_none(),
+            "app1 first event should be suppressed"
+        );
 
         // app2: event 1 -> suppressed
         processor.process_record(&path2, &record);
-        assert!(storage.get("app2", &fault_id).unwrap().is_none(), "app2 first event should be suppressed");
+        assert!(
+            storage.get("app2", &fault_id).unwrap().is_none(),
+            "app2 first event should be suppressed"
+        );
 
         // app1: event 2 -> fires (count == min_count for app1)
         processor.process_record(&path1, &record);
@@ -665,7 +738,7 @@ mod debounce_tests {
         );
     }
 
-    /// EdgeWithCooldown debounce: first event fires, subsequent within cooldown suppressed.
+    /// `EdgeWithCooldown` debounce: first event fires, subsequent within cooldown suppressed.
     #[test]
     fn dfm_applies_edge_with_cooldown_debounce() {
         let fault_id = FaultId::Numeric(400);
@@ -674,7 +747,7 @@ mod debounce_tests {
         };
         let registry = make_debounce_registry("test_entity", fault_id.clone(), debounce);
         let storage = Arc::new(InMemoryStorage::new());
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
         let path = make_path("test_entity");
 
         let record = make_record(fault_id.clone(), LifecycleStage::Failed);
@@ -725,99 +798,121 @@ mod iso14229_tests {
     // warning_indicator_requested tests
     // ========================================================================
 
-    /// Failed with SafetyCritical descriptor → warning_indicator_requested = true.
+    /// Failed with `SafetyCritical` descriptor → `warning_indicator_requested` = true.
     #[test]
     fn warning_indicator_set_for_safety_critical() {
         let fault_id = FaultId::Numeric(700);
         let compliance = ComplianceVec::try_from(&[ComplianceTag::SafetyCritical][..]).unwrap();
         let registry = make_compliance_registry("test_entity", fault_id.clone(), compliance);
         let storage = Arc::new(InMemoryStorage::new());
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
         let path = make_path("test_entity");
 
         let record = make_record(fault_id.clone(), LifecycleStage::Failed);
         processor.process_record(&path, &record);
 
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(state.warning_indicator_requested, "SafetyCritical fault should set WIR");
+        assert!(
+            state.warning_indicator_requested,
+            "SafetyCritical fault should set WIR"
+        );
     }
 
-    /// Failed with EmissionRelevant descriptor → warning_indicator_requested = true.
+    /// Failed with `EmissionRelevant` descriptor → `warning_indicator_requested` = true.
     #[test]
     fn warning_indicator_set_for_emission_relevant() {
         let fault_id = FaultId::Numeric(701);
         let compliance = ComplianceVec::try_from(&[ComplianceTag::EmissionRelevant][..]).unwrap();
         let registry = make_compliance_registry("test_entity", fault_id.clone(), compliance);
         let storage = Arc::new(InMemoryStorage::new());
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
         let path = make_path("test_entity");
 
         let record = make_record(fault_id.clone(), LifecycleStage::Failed);
         processor.process_record(&path, &record);
 
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(state.warning_indicator_requested, "EmissionRelevant fault should set WIR");
+        assert!(
+            state.warning_indicator_requested,
+            "EmissionRelevant fault should set WIR"
+        );
     }
 
-    /// Failed with SecurityRelevant only → warning_indicator_requested = false.
+    /// Failed with `SecurityRelevant` only → `warning_indicator_requested` = false.
     #[test]
     fn warning_indicator_not_set_for_security_only() {
         let fault_id = FaultId::Numeric(702);
         let compliance = ComplianceVec::try_from(&[ComplianceTag::SecurityRelevant][..]).unwrap();
         let registry = make_compliance_registry("test_entity", fault_id.clone(), compliance);
         let storage = Arc::new(InMemoryStorage::new());
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
         let path = make_path("test_entity");
 
         let record = make_record(fault_id.clone(), LifecycleStage::Failed);
         processor.process_record(&path, &record);
 
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(!state.warning_indicator_requested, "SecurityRelevant-only should not set WIR");
+        assert!(
+            !state.warning_indicator_requested,
+            "SecurityRelevant-only should not set WIR"
+        );
     }
 
-    /// PreFailed also sets warning_indicator_requested.
+    /// `PreFailed` also sets `warning_indicator_requested`.
     #[test]
     fn warning_indicator_set_on_prefailed() {
         let fault_id = FaultId::Numeric(703);
         let compliance = ComplianceVec::try_from(&[ComplianceTag::SafetyCritical][..]).unwrap();
         let registry = make_compliance_registry("test_entity", fault_id.clone(), compliance);
         let storage = Arc::new(InMemoryStorage::new());
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
         let path = make_path("test_entity");
 
         let record = make_record(fault_id.clone(), LifecycleStage::PreFailed);
         processor.process_record(&path, &record);
 
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(state.warning_indicator_requested, "PreFailed should also set WIR for SafetyCritical");
+        assert!(
+            state.warning_indicator_requested,
+            "PreFailed should also set WIR for SafetyCritical"
+        );
     }
 
     // ========================================================================
     // clear_dtc tests
     // ========================================================================
 
-    /// clear_dtc resets *_since_last_clear flags.
+    /// `clear_dtc` resets *_`since_last_clear` flags.
     #[test]
     fn clear_dtc_resets_since_last_clear_flags() {
-        let _fault_id = FaultId::Numeric(710);
+        let fault_id = FaultId::Numeric(710);
+        let _ = fault_id;
         let registry = make_registry();
         let storage = Arc::new(InMemoryStorage::new());
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
         let path = make_path("test_entity");
 
         // Create some fault state with since_last_clear flags set
         let record = make_record(FaultId::Numeric(42), LifecycleStage::Failed);
         processor.process_record(&path, &record);
 
-        let state = storage.get("test_entity", &FaultId::Numeric(42)).unwrap().unwrap();
+        let state = storage
+            .get("test_entity", &FaultId::Numeric(42))
+            .unwrap()
+            .unwrap();
         assert!(state.test_failed_since_last_clear);
 
         // Clear DTC
         processor.clear_dtc("test_entity");
 
-        let state = storage.get("test_entity", &FaultId::Numeric(42)).unwrap().unwrap();
-        assert!(!state.test_failed_since_last_clear, "clear_dtc should reset test_failed_since_last_clear");
+        let state = storage
+            .get("test_entity", &FaultId::Numeric(42))
+            .unwrap()
+            .unwrap();
+        assert!(
+            !state.test_failed_since_last_clear,
+            "clear_dtc should reset test_failed_since_last_clear"
+        );
         assert!(
             !state.test_not_completed_since_last_clear,
             "clear_dtc should reset test_not_completed_since_last_clear"
@@ -830,25 +925,31 @@ mod iso14229_tests {
     // on_new_operation_cycle tests
     // ========================================================================
 
-    /// on_new_operation_cycle resets *_this_operation_cycle flags.
+    /// `on_new_operation_cycle` resets *_`this_operation_cycle` flags.
     #[test]
     fn new_operation_cycle_resets_this_cycle_flags() {
         let registry = make_registry();
         let storage = Arc::new(InMemoryStorage::new());
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
         let path = make_path("test_entity");
 
         // Create fault state with this_operation_cycle flags set
         let record = make_record(FaultId::Numeric(42), LifecycleStage::Failed);
         processor.process_record(&path, &record);
 
-        let state = storage.get("test_entity", &FaultId::Numeric(42)).unwrap().unwrap();
+        let state = storage
+            .get("test_entity", &FaultId::Numeric(42))
+            .unwrap()
+            .unwrap();
         assert!(state.test_failed_this_operation_cycle);
 
         // New operation cycle
         processor.on_new_operation_cycle("test_entity");
 
-        let state = storage.get("test_entity", &FaultId::Numeric(42)).unwrap().unwrap();
+        let state = storage
+            .get("test_entity", &FaultId::Numeric(42))
+            .unwrap()
+            .unwrap();
         assert!(
             !state.test_failed_this_operation_cycle,
             "new cycle should reset test_failed_this_operation_cycle"
@@ -859,7 +960,10 @@ mod iso14229_tests {
         );
         // Other flags preserved
         assert!(state.test_failed, "new cycle should not affect test_failed");
-        assert!(state.confirmed_dtc, "new cycle should not affect confirmed_dtc");
+        assert!(
+            state.confirmed_dtc,
+            "new cycle should not affect confirmed_dtc"
+        );
     }
 
     /// Full ISO 14229 DTC lifecycle: Failed → clear → new cycle → Failed.
@@ -869,7 +973,7 @@ mod iso14229_tests {
         let compliance = ComplianceVec::try_from(&[ComplianceTag::SafetyCritical][..]).unwrap();
         let registry = make_compliance_registry("test_entity", fault_id.clone(), compliance);
         let storage = Arc::new(InMemoryStorage::new());
-        let mut processor = make_processor(storage.clone(), registry);
+        let mut processor = make_processor(Arc::clone(&storage), registry);
         let path = make_path("test_entity");
 
         // Step 1: Failed
@@ -886,12 +990,18 @@ mod iso14229_tests {
         processor.clear_dtc("test_entity");
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
         assert!(!state.test_failed_since_last_clear, "cleared");
-        assert!(state.test_failed_this_operation_cycle, "clear doesn't touch this_cycle");
+        assert!(
+            state.test_failed_this_operation_cycle,
+            "clear doesn't touch this_cycle"
+        );
 
         // Step 3: New operation cycle
         processor.on_new_operation_cycle("test_entity");
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(!state.test_failed_this_operation_cycle, "reset by new cycle");
+        assert!(
+            !state.test_failed_this_operation_cycle,
+            "reset by new cycle"
+        );
         assert!(!state.test_failed_since_last_clear, "still cleared");
 
         // Step 4: Failed again

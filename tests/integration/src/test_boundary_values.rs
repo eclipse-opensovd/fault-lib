@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 //! Boundary value integration tests.
 //!
 //! Tests on extreme/edge values: max-length fault IDs, max faults in a
@@ -215,7 +215,10 @@ fn many_catalogs_registered() {
         .collect();
 
     let catalog_ids: Vec<String> = (0..5).map(|i| format!("catalog_{i}")).collect();
-    let catalog_refs: Vec<&str> = catalog_ids.iter().map(|s| s.as_str()).collect();
+    let catalog_refs: Vec<&str> = catalog_ids
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
 
     let mut harness = TestHarness::new(configs);
     harness.clean_catalogs(&catalog_refs);
@@ -229,9 +232,15 @@ fn many_catalogs_registered() {
 
     // Each catalog should have exactly 1 fault
     for i in 0..5 {
-        let faults = harness.manager.get_all_faults(&format!("catalog_{i}")).unwrap();
+        let faults = harness
+            .manager
+            .get_all_faults(&format!("catalog_{i}"))
+            .unwrap();
         assert_eq!(faults.len(), 1, "catalog_{i} should have 1 fault");
-        assert_eq!(faults[0].typed_status.as_ref().unwrap().test_failed, Some(true));
+        assert_eq!(
+            faults[0].typed_status.as_ref().unwrap().test_failed,
+            Some(true)
+        );
     }
 }
 
@@ -262,7 +271,11 @@ fn fault_with_max_env_data_entries() {
 
     let (fault, env_data) = harness.manager.get_fault("hvac", "0x7001").unwrap();
     assert_eq!(fault.typed_status.as_ref().unwrap().test_failed, Some(true));
-    assert_eq!(env_data.len(), 8, "All 8 env data entries should be preserved");
+    assert_eq!(
+        env_data.len(),
+        8,
+        "All 8 env data entries should be preserved"
+    );
     assert_eq!(env_data.get("key0"), Some(&"val0".to_string()));
     assert_eq!(env_data.get("key7"), Some(&"val7".to_string()));
 }
@@ -276,7 +289,10 @@ fn fault_with_max_env_data_entries() {
 #[test]
 fn unicode_in_text_fault_id_rejected() {
     let result = to_static_short_string("sensor.温度.stuck");
-    assert!(result.is_err(), "StaticString should reject non-ASCII characters");
+    assert!(
+        result.is_err(),
+        "StaticString should reject non-ASCII characters"
+    );
 }
 
 /// ASCII-only text FaultIds with special characters work correctly.
@@ -313,7 +329,10 @@ fn special_ascii_chars_in_text_fault_id() {
     let faults = harness.manager.get_all_faults("ascii_special").unwrap();
     assert_eq!(faults.len(), 1);
     assert_eq!(faults[0].code, special_id);
-    assert_eq!(faults[0].typed_status.as_ref().unwrap().test_failed, Some(true));
+    assert_eq!(
+        faults[0].typed_status.as_ref().unwrap().test_failed,
+        Some(true)
+    );
 }
 
 /// Non-ASCII (Unicode) env data values are rejected by StaticString.
@@ -321,7 +340,10 @@ fn special_ascii_chars_in_text_fault_id() {
 #[test]
 fn unicode_in_env_data_rejected() {
     let result = to_static_short_string("エンジンルーム");
-    assert!(result.is_err(), "StaticString should reject non-ASCII env data values");
+    assert!(
+        result.is_err(),
+        "StaticString should reject non-ASCII env data values"
+    );
 }
 
 /// ASCII env data with special characters works correctly.
@@ -337,7 +359,10 @@ fn special_ascii_in_env_data() {
     harness.processor.process_record(&path, &record);
 
     let (_, env_data) = harness.manager.get_fault("hvac", "0x7001").unwrap();
-    assert_eq!(env_data.get("location"), Some(&"engine-room_v2".to_string()));
+    assert_eq!(
+        env_data.get("location"),
+        Some(&"engine-room_v2".to_string())
+    );
     assert_eq!(env_data.get("status"), Some(&"fault:active".to_string()));
 }
 
@@ -374,5 +399,8 @@ fn numeric_fault_id_max_u32() {
     let faults = harness.manager.get_all_faults("boundary_u32").unwrap();
     assert_eq!(faults.len(), 1);
     assert_eq!(faults[0].code, "0xFFFFFFFF");
-    assert_eq!(faults[0].typed_status.as_ref().unwrap().test_failed, Some(true));
+    assert_eq!(
+        faults[0].typed_status.as_ref().unwrap().test_failed,
+        Some(true)
+    );
 }

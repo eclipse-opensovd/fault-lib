@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! Enabling condition provider handles and fault monitors.
 //!
@@ -30,10 +30,10 @@ use common::sink_error::SinkError;
 use common::types::{DiagnosticEvent, ShortString};
 use core::panic::AssertUnwindSafe;
 use core::sync::atomic::{AtomicU64, Ordering};
-use log::{debug, error, warn};
 use std::collections::HashMap;
 use std::panic::catch_unwind;
 use std::sync::RwLock;
+use tracing::{debug, error, warn};
 
 // ============================================================================
 // Error types
@@ -107,11 +107,16 @@ impl EnablingCondition {
     ///
     /// Updates local state, notifies local monitors, and sends the
     /// status change to the DFM via IPC.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SinkError`] if the IPC transport fails.
     pub fn report_status(&self, status: EnablingConditionStatus) -> Result<(), SinkError> {
         self.manager.report_status(&self.id, status)
     }
 
     /// Get the identifier of this enabling condition.
+    #[must_use]
     pub fn id(&self) -> &ShortString {
         &self.id
     }
@@ -177,7 +182,7 @@ pub(crate) struct EnablingConditionManager {
     /// Registered monitors with their callbacks.
     monitors: RwLock<Vec<MonitorEntry>>,
     /// Weak reference to the sink for IPC communication.
-    /// Behind RwLock to allow deferred wiring (sink created after manager
+    /// Behind `RwLock` to allow deferred wiring (sink created after manager
     /// due to circular Arc<sink> ↔ Arc<manager> dependency).
     sink: RwLock<Option<Weak<dyn crate::FaultSinkApi>>>,
 }
@@ -216,8 +221,12 @@ impl EnablingConditionManager {
     /// Register a new enabling condition.
     ///
     /// Returns `Err` if the condition is already registered.
-    pub(crate) fn register_condition(self: &Arc<Self>, entity: &str) -> Result<EnablingCondition, EnablingConditionError> {
-        let id = ShortString::try_from(entity.as_bytes()).map_err(|_| EnablingConditionError::EntityTooLong)?;
+    pub(crate) fn register_condition(
+        self: &Arc<Self>,
+        entity: &str,
+    ) -> Result<EnablingCondition, EnablingConditionError> {
+        let id = ShortString::try_from(entity.as_bytes())
+            .map_err(|_| EnablingConditionError::EntityTooLong)?;
 
         {
             let mut conditions = self.conditions.write().map_err(|e| {
@@ -226,7 +235,9 @@ impl EnablingConditionManager {
             })?;
 
             if conditions.contains_key(entity) {
-                return Err(EnablingConditionError::AlreadyRegistered(entity.to_string()));
+                return Err(EnablingConditionError::AlreadyRegistered(
+                    entity.to_string(),
+                ));
             }
             conditions.insert(entity.to_string(), EnablingConditionStatus::Inactive);
         }
@@ -249,14 +260,20 @@ impl EnablingConditionManager {
     /// Report a status change for an enabling condition.
     ///
     /// Updates local state, notifies local monitors, and sends to DFM.
-    pub(crate) fn report_status(&self, id: &ShortString, status: EnablingConditionStatus) -> Result<(), SinkError> {
+    pub(crate) fn report_status(
+        &self,
+        id: &ShortString,
+        status: EnablingConditionStatus,
+    ) -> Result<(), SinkError> {
         let id_str = id.to_string();
 
         // Update local state
         {
             let mut conditions = self.conditions.write().map_err(|e| {
                 error!("conditions lock poisoned in report_status: {e}");
-                SinkError::Other(alloc::borrow::Cow::Owned(format!("conditions lock poisoned: {e}")))
+                SinkError::Other(alloc::borrow::Cow::Owned(format!(
+                    "conditions lock poisoned: {e}"
+                )))
             })?;
 
             if let Some(current) = conditions.get_mut(&id_str) {
@@ -288,7 +305,11 @@ impl EnablingConditionManager {
     ///
     /// Called by the notification listener when a status change is
     /// received from DFM. Updates local state and dispatches to monitors.
-    pub(crate) fn handle_remote_notification(&self, id: &ShortString, status: EnablingConditionStatus) {
+    pub(crate) fn handle_remote_notification(
+        &self,
+        id: &ShortString,
+        status: EnablingConditionStatus,
+    ) {
         let id_str = id.to_string();
 
         // Update local state
@@ -413,7 +434,10 @@ mod tests {
         let manager = make_manager();
         let ec = manager.register_condition("vehicle.speed.valid");
         assert!(ec.is_ok());
-        assert_eq!(manager.get_status("vehicle.speed.valid"), Some(EnablingConditionStatus::Inactive));
+        assert_eq!(
+            manager.get_status("vehicle.speed.valid"),
+            Some(EnablingConditionStatus::Inactive)
+        );
     }
 
     #[test]
@@ -429,7 +453,10 @@ mod tests {
         let manager = make_manager();
         let ec = manager.register_condition("engine.running").unwrap();
         ec.report_status(EnablingConditionStatus::Active).unwrap();
-        assert_eq!(manager.get_status("engine.running"), Some(EnablingConditionStatus::Active));
+        assert_eq!(
+            manager.get_status("engine.running"),
+            Some(EnablingConditionStatus::Active)
+        );
     }
 
     #[test]
@@ -439,7 +466,10 @@ mod tests {
         ec.report_status(EnablingConditionStatus::Inactive).unwrap();
         // Same status again — should be a no-op
         ec.report_status(EnablingConditionStatus::Inactive).unwrap();
-        assert_eq!(manager.get_status("engine.running"), Some(EnablingConditionStatus::Inactive));
+        assert_eq!(
+            manager.get_status("engine.running"),
+            Some(EnablingConditionStatus::Inactive)
+        );
     }
 
     #[test]
@@ -497,7 +527,10 @@ mod tests {
 
         let _monitor = manager
             .register_monitor(
-                vec!["vehicle.speed.valid".to_string(), "engine.running".to_string()],
+                vec![
+                    "vehicle.speed.valid".to_string(),
+                    "engine.running".to_string(),
+                ],
                 Arc::new(move |_id: &str, _status: EnablingConditionStatus| {
                     count_clone.fetch_add(1, Ordering::SeqCst);
                 }),
@@ -554,7 +587,10 @@ mod tests {
         let id = ShortString::try_from("remote.condition".as_bytes()).unwrap();
         manager.handle_remote_notification(&id, EnablingConditionStatus::Active);
 
-        assert_eq!(manager.get_status("remote.condition"), Some(EnablingConditionStatus::Active));
+        assert_eq!(
+            manager.get_status("remote.condition"),
+            Some(EnablingConditionStatus::Active)
+        );
         assert_eq!(call_count.load(Ordering::SeqCst), 1);
     }
 
@@ -608,8 +644,16 @@ mod tests {
 
         ec.report_status(EnablingConditionStatus::Active).unwrap();
 
-        assert_eq!(count_before.load(Ordering::SeqCst), 1, "Monitor before panic should receive callback");
-        assert_eq!(count_after.load(Ordering::SeqCst), 1, "Monitor after panic should receive callback");
+        assert_eq!(
+            count_before.load(Ordering::SeqCst),
+            1,
+            "Monitor before panic should receive callback"
+        );
+        assert_eq!(
+            count_after.load(Ordering::SeqCst),
+            1,
+            "Monitor after panic should receive callback"
+        );
 
         // Subsequent notifications still work
         ec.report_status(EnablingConditionStatus::Inactive).unwrap();
@@ -630,6 +674,9 @@ mod tests {
 
         // After wiring: report_status sends to sink without panic
         ec.report_status(EnablingConditionStatus::Active).unwrap();
-        assert_eq!(manager.get_status("test.condition"), Some(EnablingConditionStatus::Active));
+        assert_eq!(
+            manager.get_status("test.condition"),
+            Some(EnablingConditionStatus::Active)
+        );
     }
 }

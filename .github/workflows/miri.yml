@@ -1,5 +1,5 @@
-# *******************************************************************************
-# Copyright (c) 2026 Contributors to the Eclipse Foundation
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
 #
 # See the NOTICE file(s) distributed with this work for additional
 # information regarding copyright ownership.
@@ -7,9 +7,6 @@
 # This program and the accompanying materials are made available under the
 # terms of the Apache License Version 2.0 which is available at
 # https://www.apache.org/licenses/LICENSE-2.0
-#
-# SPDX-License-Identifier: Apache-2.0
-# *******************************************************************************
 
 name: Miri
 
@@ -29,22 +26,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  cargo-miri:
-    name: Miri (Undefined Behavior Check)
-    runs-on: ubuntu-latest
-    env:
-      MIRIFLAGS: "-Zmiri-disable-isolation"
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: miri, rust-src
-
-      - name: Run Miri
-        # --exclude integration_tests: integration tests use iceoryx2 IPC (shared memory
-        #   + system calls) which Miri cannot emulate — they'd fail with unsupported-syscall errors.
-        # --exclude xtask: build helper binary with no unsafe code; excluding it avoids
-        #   pulling in proc-macro and build-script dependencies that Miri cannot interpret.
-        run: cargo miri test --workspace --exclude integration_tests --exclude xtask
+  miri:
+    uses: eclipse-opensovd/cicd-workflows/.github/workflows/miri.yml@main
+    with:
+      cargo-locked: true
+      exclude-crates: "integration_tests xtask"

@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 //! Concurrent access integration tests.
 //!
 //! These tests verify thread-safety under contention: concurrent
@@ -35,7 +35,9 @@ use std::thread;
 #[test]
 #[serial]
 fn concurrent_process_and_query_does_not_panic() {
-    let harness = Arc::new(std::sync::Mutex::new(TestHarness::new(vec![hvac_catalog_config()])));
+    let harness = Arc::new(std::sync::Mutex::new(TestHarness::new(vec![
+        hvac_catalog_config(),
+    ])));
 
     // Clean slate
     harness.lock().unwrap().clean_catalogs(&["hvac"]);
@@ -57,7 +59,11 @@ fn concurrent_process_and_query_does_not_panic() {
         let harness = Arc::clone(&harness);
         let fault_id = fault_id.clone();
         handles.push(thread::spawn(move || {
-            for stage in [LifecycleStage::Failed, LifecycleStage::Passed, LifecycleStage::PreFailed] {
+            for stage in [
+                LifecycleStage::Failed,
+                LifecycleStage::Passed,
+                LifecycleStage::PreFailed,
+            ] {
                 let mut h = harness.lock().unwrap();
                 let record = make_fault_record(fault_id.clone(), stage);
                 h.processor.process_record(&path, &record);
@@ -71,7 +77,10 @@ fn concurrent_process_and_query_does_not_panic() {
             for _ in 0..3 {
                 let h = harness.lock().unwrap();
                 let result = h.manager.get_all_faults("hvac");
-                assert!(result.is_ok(), "get_all_faults should not fail under contention");
+                assert!(
+                    result.is_ok(),
+                    "get_all_faults should not fail under contention"
+                );
                 let faults = result.unwrap();
                 assert!(!faults.is_empty(), "Should always have faults in catalog");
             }
@@ -118,7 +127,10 @@ fn concurrent_reads_on_manager_does_not_panic() {
         handles.push(thread::spawn(move || {
             for _ in 0..20 {
                 let result = mgr.get_all_faults("hvac");
-                assert!(result.is_ok(), "get_all_faults should not fail under concurrent reads");
+                assert!(
+                    result.is_ok(),
+                    "get_all_faults should not fail under concurrent reads"
+                );
                 let faults = result.unwrap();
                 assert!(!faults.is_empty(), "Should always have faults in catalog");
             }
@@ -139,7 +151,9 @@ fn concurrent_reads_on_manager_does_not_panic() {
 #[test]
 #[serial]
 fn concurrent_delete_and_process_does_not_panic() {
-    let harness = Arc::new(std::sync::Mutex::new(TestHarness::new(vec![hvac_catalog_config()])));
+    let harness = Arc::new(std::sync::Mutex::new(TestHarness::new(vec![
+        hvac_catalog_config(),
+    ])));
     harness.lock().unwrap().clean_catalogs(&["hvac"]);
 
     let path = make_path("hvac");
@@ -190,7 +204,10 @@ fn concurrent_delete_and_process_does_not_panic() {
 #[test]
 #[serial]
 fn multi_catalog_concurrent_access_maintains_isolation() {
-    let harness = Arc::new(std::sync::Mutex::new(TestHarness::new(vec![hvac_catalog_config(), ivi_catalog_config()])));
+    let harness = Arc::new(std::sync::Mutex::new(TestHarness::new(vec![
+        hvac_catalog_config(),
+        ivi_catalog_config(),
+    ])));
     harness.lock().unwrap().clean_catalogs(&["hvac", "ivi"]);
 
     let mut handles = vec![];
@@ -216,7 +233,9 @@ fn multi_catalog_concurrent_access_maintains_isolation() {
             for _ in 0..10 {
                 let mut h = harness.lock().unwrap();
                 let record = make_fault_record(
-                    FaultId::Text(common::types::to_static_short_string("ivi.display.init_timeout").unwrap()),
+                    FaultId::Text(
+                        common::types::to_static_short_string("ivi.display.init_timeout").unwrap(),
+                    ),
                     LifecycleStage::Failed,
                 );
                 h.processor.process_record(&path, &record);
@@ -245,7 +264,10 @@ fn multi_catalog_concurrent_access_maintains_isolation() {
     );
 
     // IVI fault should be marked as failed
-    let ivi_fault = ivi_faults.iter().find(|f| f.code == "ivi.display.init_timeout").unwrap();
+    let ivi_fault = ivi_faults
+        .iter()
+        .find(|f| f.code == "ivi.display.init_timeout")
+        .unwrap();
     assert_eq!(
         ivi_fault.typed_status.as_ref().unwrap().test_failed,
         Some(true),

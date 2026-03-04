@@ -1,19 +1,19 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 use crate::ResetPolicy;
 use crate::debounce::DebounceMode;
-use crate::ids::*;
-use crate::types::*;
+use crate::ids::SourceId;
+use crate::types::{LongString, MetadataVec, ShortString};
 use iceoryx2::prelude::ZeroCopySend;
 use iceoryx2_bb_container::vector::StaticVec;
 use serde::{Deserialize, Serialize};
@@ -26,7 +26,9 @@ pub type ComplianceVec = StaticVec<ComplianceTag, 8>;
 /// Three representations are supported to cover different use cases:
 /// numeric codes for DTC-like systems, human-readable text, and UUIDs
 /// for globally unique identification.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ZeroCopySend)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ZeroCopySend,
+)]
 #[repr(C)]
 pub enum FaultId {
     /// Numeric identifier (e.g. DTC-like `0x7001`).
@@ -135,18 +137,32 @@ impl LifecycleStage {
     /// ```
     ///
     /// Self-transitions (e.g. Failed → Failed) are allowed as no-ops.
+    #[must_use]
     pub fn is_valid_transition(&self, to: &LifecycleStage) -> bool {
         if self == to {
             return true;
         }
-        use LifecycleStage::*;
         matches!(
             (self, to),
-            (NotTested, PreFailed | PrePassed | Failed | Passed)
-                | (PreFailed, Failed | PrePassed | NotTested)
-                | (Failed, PrePassed | Passed | NotTested)
-                | (PrePassed, Passed | PreFailed | NotTested)
-                | (Passed, PreFailed | Failed | NotTested)
+            (
+                LifecycleStage::NotTested,
+                LifecycleStage::PreFailed
+                    | LifecycleStage::PrePassed
+                    | LifecycleStage::Failed
+                    | LifecycleStage::Passed
+            ) | (
+                LifecycleStage::PreFailed,
+                LifecycleStage::Failed | LifecycleStage::PrePassed | LifecycleStage::NotTested
+            ) | (
+                LifecycleStage::Failed,
+                LifecycleStage::PrePassed | LifecycleStage::Passed | LifecycleStage::NotTested
+            ) | (
+                LifecycleStage::PrePassed,
+                LifecycleStage::Passed | LifecycleStage::PreFailed | LifecycleStage::NotTested
+            ) | (
+                LifecycleStage::Passed,
+                LifecycleStage::PreFailed | LifecycleStage::Failed | LifecycleStage::NotTested
+            )
         )
     }
 }
@@ -236,7 +252,7 @@ pub enum IpcTimestampError {
     NanosecondsOutOfRange(u32),
 }
 
-/// Concrete record produced on each report() call, also logged.
+/// Concrete record produced on each `report()` call, also logged.
 #[derive(Debug, Clone, PartialEq, ZeroCopySend)]
 #[repr(C)]
 pub struct FaultRecord {
@@ -379,7 +395,10 @@ mod tests {
             LifecycleStage::PrePassed,
             LifecycleStage::Passed,
         ] {
-            assert!(stage.is_valid_transition(&stage), "{stage:?} → {stage:?} should be valid");
+            assert!(
+                stage.is_valid_transition(&stage),
+                "{stage:?} → {stage:?} should be valid"
+            );
         }
     }
 
@@ -405,16 +424,27 @@ mod tests {
             (Passed, NotTested),
         ];
         for (from, to) in valid {
-            assert!(from.is_valid_transition(&to), "{from:?} → {to:?} should be valid");
+            assert!(
+                from.is_valid_transition(&to),
+                "{from:?} → {to:?} should be valid"
+            );
         }
     }
 
     #[test]
     fn lifecycle_invalid_transitions() {
         use LifecycleStage::*;
-        let invalid = [(PreFailed, Passed), (Failed, PreFailed), (PrePassed, Failed), (Passed, PrePassed)];
+        let invalid = [
+            (PreFailed, Passed),
+            (Failed, PreFailed),
+            (PrePassed, Failed),
+            (Passed, PrePassed),
+        ];
         for (from, to) in invalid {
-            assert!(!from.is_valid_transition(&to), "{from:?} → {to:?} should be invalid");
+            assert!(
+                !from.is_valid_transition(&to),
+                "{from:?} → {to:?} should be invalid"
+            );
         }
     }
 
@@ -430,11 +460,11 @@ mod tests {
     #[test]
     fn ipc_timestamp_construction() {
         let ts = IpcTimestamp {
-            seconds_since_epoch: 1705312200,
-            nanoseconds: 123456789,
+            seconds_since_epoch: 1_705_312_200,
+            nanoseconds: 123_456_789,
         };
-        assert_eq!(ts.seconds_since_epoch, 1705312200);
-        assert_eq!(ts.nanoseconds, 123456789);
+        assert_eq!(ts.seconds_since_epoch, 1_705_312_200);
+        assert_eq!(ts.nanoseconds, 123_456_789);
     }
 
     // ========== IpcTimestamp::new validation ==========
@@ -461,7 +491,10 @@ mod tests {
     fn ipc_timestamp_new_nanos_overflow_err() {
         let ts = IpcTimestamp::new(0, 1_000_000_000);
         assert!(ts.is_err());
-        assert_eq!(ts.unwrap_err(), super::IpcTimestampError::NanosecondsOutOfRange(1_000_000_000));
+        assert_eq!(
+            ts.unwrap_err(),
+            super::IpcTimestampError::NanosecondsOutOfRange(1_000_000_000)
+        );
     }
 
     #[test]

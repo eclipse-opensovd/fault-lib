@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! IPC wire types for DFM query/clear request-response protocol.
 //!
@@ -33,13 +33,13 @@ pub const MAX_FAULTS_PER_RESPONSE: usize = 64;
 
 /// IPC-safe fault representation with fixed-size fields.
 ///
-/// Converted from/to `SovdFault` via conversion functions in dfm_lib.
+/// Converted from/to `SovdFault` via conversion functions in `dfm_lib`.
 /// See module-level docs for lossy conversion details.
 #[derive(Debug, Clone, ZeroCopySend)]
 #[repr(C)]
 pub struct IpcSovdFault {
     // --- Core identification ---
-    /// Fault code (e.g., "0x1001", "fault_a"). Truncated to 64B.
+    /// Fault code (e.g., "0x1001", "`fault_a`"). Truncated to 64B.
     pub code: ShortString,
     /// Human-readable display code. Truncated to 64B.
     pub display_code: ShortString,
@@ -117,11 +117,11 @@ pub enum DfmQueryRequest {
     /// Get single fault: `(path, fault_code)`.
     GetFault(LongString, ShortString),
     /// Delete all fault state for entity at `path` (removes from storage entirely).
-    /// Note: this is SOVD DeleteFault, not UDS $14 ClearDiagnosticInformation.
+    /// Note: this is SOVD `DeleteFault`, not UDS $14 `ClearDiagnosticInformation`.
     // TODO: Add ClearDtc/ClearSingleDtc variants for ISO 14229 UDS $14 compliance
     DeleteAllFaults(LongString),
     /// Delete single fault state: `(path, fault_code)` (removes from storage entirely).
-    /// Note: this is SOVD DeleteFault, not UDS $14 ClearDiagnosticInformation.
+    /// Note: this is SOVD `DeleteFault`, not UDS $14 `ClearDiagnosticInformation`.
     DeleteFault(LongString, ShortString),
 }
 
@@ -139,7 +139,7 @@ pub enum DfmQueryError {
 
 /// Response variants for the DFM query service.
 ///
-/// Large variant size disparity (FaultList vs Ok) is intentional:
+/// Large variant size disparity (`FaultList` vs Ok) is intentional:
 /// boxing is not possible for IPC types crossing shared-memory boundaries.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, ZeroCopySend)]
@@ -191,9 +191,16 @@ mod tests {
     #[test]
     fn dfm_query_request_variants_constructible() {
         let _req1 = DfmQueryRequest::GetAllFaults(LongString::from_str_truncated("hvac").unwrap());
-        let _req2 = DfmQueryRequest::GetFault(LongString::from_str_truncated("hvac").unwrap(), ShortString::try_from("0x7001").unwrap());
-        let _req3 = DfmQueryRequest::DeleteAllFaults(LongString::from_str_truncated("hvac").unwrap());
-        let _req4 = DfmQueryRequest::DeleteFault(LongString::from_str_truncated("hvac").unwrap(), ShortString::try_from("0x7001").unwrap());
+        let _req2 = DfmQueryRequest::GetFault(
+            LongString::from_str_truncated("hvac").unwrap(),
+            ShortString::try_from("0x7001").unwrap(),
+        );
+        let _req3 =
+            DfmQueryRequest::DeleteAllFaults(LongString::from_str_truncated("hvac").unwrap());
+        let _req4 = DfmQueryRequest::DeleteFault(
+            LongString::from_str_truncated("hvac").unwrap(),
+            ShortString::try_from("0x7001").unwrap(),
+        );
     }
 
     #[test]
@@ -201,6 +208,8 @@ mod tests {
         let _ok = DfmQueryResponse::Ok;
         let _err_bad = DfmQueryResponse::Error(DfmQueryError::BadArgument);
         let _err_nf = DfmQueryResponse::Error(DfmQueryError::NotFound);
-        let _err_stor = DfmQueryResponse::Error(DfmQueryError::StorageError(ShortString::try_from("disk full").unwrap()));
+        let _err_stor = DfmQueryResponse::Error(DfmQueryError::StorageError(
+            ShortString::try_from("disk full").unwrap(),
+        ));
     }
 }

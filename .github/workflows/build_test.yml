@@ -1,5 +1,5 @@
-# *******************************************************************************
-# Copyright (c) 2026 Contributors to the Eclipse Foundation
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
 #
 # See the NOTICE file(s) distributed with this work for additional
 # information regarding copyright ownership.
@@ -7,9 +7,6 @@
 # This program and the accompanying materials are made available under the
 # terms of the Apache License Version 2.0 which is available at
 # https://www.apache.org/licenses/LICENSE-2.0
-#
-# SPDX-License-Identifier: Apache-2.0
-# *******************************************************************************
 
 name: Build & Test
 
@@ -29,36 +26,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  cargo-build-test:
-    name: Cargo Build & Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Build all crates
-        run: cargo build --workspace
-
-      - name: Run tests (IPC tests run serially)
-        run: cargo test --workspace --all-targets
-
-  bazel-build-test:
-    name: Bazel Build & Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Bazel
-        uses: bazel-contrib/setup-bazel@0.14.0
-        with:
-          bazelisk-cache: true
-          disk-cache: ${{ github.workflow }}-bazel
-          repository-cache: true
-
-      - name: Bazel build (excluding docs — score_plantuml requires local runfiles)
-        run: bazel build //src/... //tests/...
-
-      - name: Bazel test (excluding docs)
-        run: bazel test //src/... //tests/...
+  build-and-test:
+    uses: eclipse-opensovd/cicd-workflows/.github/workflows/build-and-test.yml@main
+    with:
+      rust-version: "nightly-2025-07-14"
+      cargo-locked: true
+      cargo-test-args: "--workspace --all-targets"
+      bazel-enabled: true
+      bazel-build-targets: "//src/... //tests/..."
+      bazel-test-targets: "//src/... //tests/..."

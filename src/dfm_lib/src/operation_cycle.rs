@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! Tracks named operation cycles for fault aging.
 //!
@@ -107,6 +107,7 @@ pub struct OperationCycleTracker {
 
 impl OperationCycleTracker {
     /// Create a new empty tracker.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -127,12 +128,14 @@ impl OperationCycleTracker {
     }
 
     /// Get current count for a cycle reference. Returns 0 if unknown.
+    #[must_use]
     pub fn get(&self, cycle_ref: &str) -> u64 {
         self.cycles.get(cycle_ref).copied().unwrap_or(0)
     }
 
     /// Snapshot all current cycle values.
-    /// Returns a HashMap that can be stored with fault aging state.
+    /// Returns a `HashMap` that can be stored with fault aging state.
+    #[must_use]
     pub fn snapshot(&self) -> HashMap<String, u64> {
         self.cycles.clone()
     }
@@ -141,7 +144,7 @@ impl OperationCycleTracker {
     ///
     /// `Start` and `Restart` increment the named counter; `Stop` is
     /// recorded but does not change the counter (it is informational).
-    /// Duplicate events (same cycle_id + same resulting count) are
+    /// Duplicate events (same `cycle_id` + same resulting count) are
     /// effectively idempotent because `increment()` always moves forward.
     ///
     /// Returns the set of cycle names that were actually incremented.
@@ -175,6 +178,7 @@ pub struct ManualCycleProvider {
 }
 
 impl ManualCycleProvider {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -272,7 +276,10 @@ mod tests {
     #[test]
     fn apply_events_start_increments_counter() {
         let mut tracker = OperationCycleTracker::new();
-        let events = vec![make_event("power", CycleEventType::Start), make_event("power", CycleEventType::Start)];
+        let events = vec![
+            make_event("power", CycleEventType::Start),
+            make_event("power", CycleEventType::Start),
+        ];
         let incremented = tracker.apply_events(&events);
         assert_eq!(tracker.get("power"), 2);
         assert_eq!(incremented.len(), 2);
@@ -316,6 +323,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
+    #[allow(clippy::indexing_slicing)]
     fn manual_provider_poll_drains_queue() {
         let mut provider = ManualCycleProvider::new();
         provider.start_cycle("power");
@@ -332,6 +340,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::indexing_slicing)]
     fn manual_provider_start_and_stop() {
         let mut provider = ManualCycleProvider::new();
         provider.start_cycle("drive");

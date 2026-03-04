@@ -1,3 +1,13 @@
+' SPDX-License-Identifier: Apache-2.0
+' SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+'
+' See the NOTICE file(s) distributed with this work for additional
+' information regarding copyright ownership.
+'
+' This program and the accompanying materials are made available under the
+' terms of the Apache License Version 2.0 which is available at
+' https://www.apache.org/licenses/LICENSE-2.0
+
 @startuml
 title Enabling Condition : cross-app status notifications
 skinparam ParticipantPadding 20
@@ -31,7 +41,14 @@ FaultLib2 -> FaultLib2 : EnablingConditionManager.register_monitor()
 note right of FaultLib2
     The FaultLib keeps locally the track which fault
     monitors are subscribing on which enabling conditions.
-    Monitors are auto-unregistered when dropped.
+    Monitors are auto-unregistered when dropped (RAII).
+
+    **Process crash**: FaultMonitor uses Drop for cleanup,
+    so a process crash bypasses unregistration. Currently
+    the DFM does not implement dead-publisher detection -
+    stale monitor registrations remain until DFM restart.
+    //TODO: add dead-publisher detection to DfmTransport//
+    //trait and clean up stale registrations on crash.//
 end note
 
 == Status Reporting ==
@@ -40,11 +57,11 @@ App1 -> EC : report_status(Active)
 EC -> FaultLib1 : EnablingConditionManager.report_status()
 FaultLib1 -> FaultLib1 : update local state + notify local monitors
 FaultLib1 ->> IW1 : mpsc::try_send(\nEnablingConditionStatusChange\n(entity, Active))
-IW1 ->> DiagFaultMgr : iceoryx2 publish\non "dfm/event"
+IW1 ->> DiagFaultMgr : publish on "dfm/event"\n(IPC via FaultSinkApi;\ndefault: iceoryx2)
 DiagFaultMgr -> EnablingConditionRegistry : update_status(entity, Active)
-DiagFaultMgr ->> IW2 : iceoryx2 publish on\n"dfm/enabling_condition/notification"
+DiagFaultMgr ->> IW2 : publish on\n"dfm/enabling_condition/notification"\n(IPC via DfmTransport;\ndefault: iceoryx2)
 note right of IW2
-    IpcWorker polls the iceoryx2
+    IpcWorker polls the IPC
     subscriber in its main loop
     (recv_timeout 50ms cycle).
 end note

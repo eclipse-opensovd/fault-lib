@@ -1,3 +1,13 @@
+' SPDX-License-Identifier: Apache-2.0
+' SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+'
+' See the NOTICE file(s) distributed with this work for additional
+' information regarding copyright ownership.
+'
+' This program and the accompanying materials are made available under the
+' terms of the Apache License Version 2.0 which is available at
+' https://www.apache.org/licenses/LICENSE-2.0
+
 @startuml
 title Fault Catalog Initialization
 
@@ -18,16 +28,21 @@ FaultLib -> FaultLib : read_and_verify_catalog_config_file()
 FaultLib -> FaultLib : calculate_catalog_hashsum()
 
 create IpcWorker
-FaultLib -> IpcWorker : spawn thread + create\niceoryx2 publisher ("dfm/event") +\nEC notification subscriber
-FaultLib -> FaultLib : create iceoryx2 subscriber\n("dfm/event/hash/response")
+FaultLib -> IpcWorker : spawn thread + create\npublisher ("dfm/event") +\nEC notification subscriber
+FaultLib -> FaultLib : create subscriber\n("dfm/event/hash/response")
+note right of IpcWorker
+    IPC transport is pluggable via **FaultSinkApi** trait
+    (reporter side) and **DfmTransport** trait (DFM side).
+    Default implementation: iceoryx2 zero-copy shared memory.
+end note
 
-== Hash Verification (iceoryx2 zero-copy shared memory) ==
+== Hash Verification (IPC - default: iceoryx2) ==
 
 FaultLib ->> IpcWorker : mpsc::try_send(\nDiagnosticEvent::Hash(catalog_id, hash))
-IpcWorker ->> DiagnosticFaultMgr : iceoryx2 publish on "dfm/event"
+IpcWorker ->> DiagnosticFaultMgr : publish on "dfm/event"
 
 DiagnosticFaultMgr -> DiagnosticFaultMgr : check_hash_sum(path, hash)
-DiagnosticFaultMgr ->> FaultLib : iceoryx2 publish bool\non "dfm/event/hash/response"
+DiagnosticFaultMgr ->> FaultLib : publish bool\non "dfm/event/hash/response"
 note right of FaultLib
     FaultLib polls subscriber directly
     (not via IpcWorker) every 50ms,

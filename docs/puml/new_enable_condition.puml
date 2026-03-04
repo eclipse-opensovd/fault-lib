@@ -1,3 +1,13 @@
+' SPDX-License-Identifier: Apache-2.0
+' SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+'
+' See the NOTICE file(s) distributed with this work for additional
+' information regarding copyright ownership.
+'
+' This program and the accompanying materials are made available under the
+' terms of the Apache License Version 2.0 which is available at
+' https://www.apache.org/licenses/LICENSE-2.0
+
 @startuml
 title Registering new enabling condition by the provider
 skinparam ParticipantPadding 20
@@ -25,7 +35,7 @@ else
     create EnablingCondition
     EnablingCondition <- FaultLib : new(id, manager)
     FaultLib ->> IpcWorker : mpsc::try_send(\nEnablingConditionRegister\n(sovd_entity))
-    IpcWorker ->> DiagFaultMgr : iceoryx2 publish\non "dfm/event"
+    IpcWorker ->> DiagFaultMgr : publish on "dfm/event"\n(IPC via FaultSinkApi trait;\ndefault: iceoryx2)
     DiagFaultMgr -> EnablingConditionRegistry : register(sovd_entity)
     App <-- FaultLib : Ok(EnablingCondition)
 end
@@ -37,7 +47,7 @@ EnablingCondition -> FaultLib : EnablingConditionManager.report_status()
 FaultLib -> FaultLib : update local state + notify local monitors
 App <-- EnablingCondition : Ok(())
 FaultLib ->> IpcWorker : mpsc::try_send(\nEnablingConditionStatusChange\n(entity, Active))
-IpcWorker ->> DiagFaultMgr : iceoryx2 publish\non "dfm/event"
+IpcWorker ->> DiagFaultMgr : publish on "dfm/event"
 DiagFaultMgr -> EnablingConditionRegistry : update_status(entity, Active)
 
 @enduml

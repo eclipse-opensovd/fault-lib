@@ -1,32 +1,32 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use clap::Parser;
 use common::fault::*;
 use common::types::MetadataVec;
-use env_logger::Env;
 use fault_lib::FaultApi;
 use fault_lib::catalog::FaultCatalogBuilder;
+use tracing_subscriber::EnvFilter;
 
 use fault_lib::reporter::Reporter;
 use fault_lib::reporter::ReporterApi;
 use fault_lib::reporter::ReporterConfig;
 use fault_lib::utils::to_static_short_string;
 
-use log::*;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
+use tracing::*;
 
 /// Command line arguments
 #[derive(Parser, Debug)]
@@ -40,12 +40,18 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    let env = Env::default().filter_or("RUST_LOG", "debug");
-    env_logger::init_from_env(env);
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "debug".into()))
+        .init();
     info!("Start Basic fault library example");
     // Create the FaultLib API object. We have to create it before any Fault API can be used
     // and keep it on stack until end of the program. No need to hand it over somewhere
-    let _api = FaultApi::new(FaultCatalogBuilder::new().json_file(args.config_file).expect("builder config").build());
+    let _api = FaultApi::new(
+        FaultCatalogBuilder::new()
+            .json_file(args.config_file)
+            .expect("builder config")
+            .build(),
+    );
 
     // here you can use any public api from fault-api
     playground();
@@ -82,8 +88,14 @@ fn playground() {
         debug!("Loop {x}");
 
         for reporter in reporters.iter_mut() {
-            let stage = if (x % 2) == 0 { LifecycleStage::Passed } else { LifecycleStage::Failed };
-            reporter.publish(&sovd_path, reporter.create_record(stage)).expect("publish failed");
+            let stage = if (x % 2) == 0 {
+                LifecycleStage::Passed
+            } else {
+                LifecycleStage::Failed
+            };
+            reporter
+                .publish(&sovd_path, reporter.create_record(stage))
+                .expect("publish failed");
         }
         thread::sleep(Duration::from_millis(200));
     }

@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! IPC service name constants for iceoryx2 publish-subscribe channels.
 //!
@@ -49,13 +49,15 @@ pub const DIAGNOSTIC_FAULT_MANAGER_EVENT_SERVICE_NAME: &str = "dfm/event";
 ///
 /// After a reporter registers, the DFM replies on this channel with a
 /// hash-check response confirming catalog consistency.
-pub const DIAGNOSTIC_FAULT_MANAGER_HASH_CHECK_RESPONSE_SERVICE_NAME: &str = "dfm/event/hash/response";
+pub const DIAGNOSTIC_FAULT_MANAGER_HASH_CHECK_RESPONSE_SERVICE_NAME: &str =
+    "dfm/event/hash/response";
 
 /// Iceoryx2 service name for enabling-condition notifications (DFM → reporters).
 ///
 /// The DFM publishes [`EnablingConditionNotification`](crate::EnablingConditionNotification)
 /// messages whenever an enabling condition changes state.
-pub const ENABLING_CONDITION_NOTIFICATION_SERVICE_NAME: &str = "dfm/enabling_condition/notification";
+pub const ENABLING_CONDITION_NOTIFICATION_SERVICE_NAME: &str =
+    "dfm/enabling_condition/notification";
 
 /// Iceoryx2 service name for DFM query request-response (external tool -> DFM).
 ///

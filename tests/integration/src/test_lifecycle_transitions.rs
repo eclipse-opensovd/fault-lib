@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 //! Fault lifecycle transition tests.
 //!
 //! Validates the complete fault lifecycle as seen through the SOVD interface:
@@ -49,7 +49,11 @@ fn full_lifecycle_failed_then_passed() {
     let fault = faults.iter().find(|f| f.code == "0x7001").unwrap();
     let status = fault.typed_status.as_ref().unwrap();
     assert_eq!(status.test_failed, Some(false), "Passed clears test_failed");
-    assert_eq!(status.confirmed_dtc, Some(false), "Passed clears confirmed_dtc (no aging policy)");
+    assert_eq!(
+        status.confirmed_dtc,
+        Some(false),
+        "Passed clears confirmed_dtc (no aging policy)"
+    );
 }
 
 /// **Scenario**: Pre-stages set pending DTC without confirming.
@@ -73,7 +77,11 @@ fn prefailed_sets_pending_without_confirming() {
 
     assert_eq!(status.test_failed, Some(true), "PreFailed sets test_failed");
     assert_eq!(status.pending_dtc, Some(true), "PreFailed sets pending_dtc");
-    assert_eq!(status.confirmed_dtc, Some(false), "PreFailed does NOT set confirmed_dtc");
+    assert_eq!(
+        status.confirmed_dtc,
+        Some(false),
+        "PreFailed does NOT set confirmed_dtc"
+    );
 }
 
 /// **Scenario**: PreFailed → Failed confirms the DTC.
@@ -101,7 +109,11 @@ fn prefailed_then_failed_confirms_dtc() {
 
     assert_eq!(status.test_failed, Some(true));
     assert_eq!(status.pending_dtc, Some(false), "Failed clears pending_dtc");
-    assert_eq!(status.confirmed_dtc, Some(true), "Failed sets confirmed_dtc");
+    assert_eq!(
+        status.confirmed_dtc,
+        Some(true),
+        "Failed sets confirmed_dtc"
+    );
 }
 
 /// **Scenario**: NotTested marks the test-not-completed flag.
@@ -151,7 +163,10 @@ fn intermittent_fault_toggles_correctly() {
         .into_iter()
         .find(|f| f.code == "0x7001")
         .unwrap();
-    assert_eq!(fault.typed_status.as_ref().unwrap().confirmed_dtc, Some(true));
+    assert_eq!(
+        fault.typed_status.as_ref().unwrap().confirmed_dtc,
+        Some(true)
+    );
 
     // Clears
     let record = make_fault_record(FaultId::Numeric(0x7001), LifecycleStage::Passed);
@@ -163,7 +178,10 @@ fn intermittent_fault_toggles_correctly() {
         .into_iter()
         .find(|f| f.code == "0x7001")
         .unwrap();
-    assert_eq!(fault.typed_status.as_ref().unwrap().confirmed_dtc, Some(false));
+    assert_eq!(
+        fault.typed_status.as_ref().unwrap().confirmed_dtc,
+        Some(false)
+    );
 
     // Re-occurs
     let record = make_fault_record(FaultId::Numeric(0x7001), LifecycleStage::Failed);

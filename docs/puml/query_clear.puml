@@ -1,3 +1,13 @@
+' SPDX-License-Identifier: Apache-2.0
+' SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+'
+' See the NOTICE file(s) distributed with this work for additional
+' information regarding copyright ownership.
+'
+' This program and the accompanying materials are made available under the
+' terms of the Apache License Version 2.0 which is available at
+' https://www.apache.org/licenses/LICENSE-2.0
+
 @startuml
 title DFM Query/Clear IPC Protocol
 skinparam ParticipantPadding 20
@@ -27,7 +37,7 @@ Client -> Iceoryx2DfmQuery : new()\nconnects to "dfm/query" service
 
 Client -> Iceoryx2DfmQuery : get_all_faults(entity_path)
 Iceoryx2DfmQuery -> Iceoryx2DfmQuery : path -> LongString (128B)\n(rejects if too long)
-Iceoryx2DfmQuery ->> Server : iceoryx2 send\nDfmQueryRequest::GetAllFaults(path)
+Iceoryx2DfmQuery ->> Server : IPC send (default: iceoryx2)\nDfmQueryRequest::GetAllFaults(path)
 Iceoryx2DfmQuery -> Iceoryx2DfmQuery : poll response\n(1s timeout, 10ms interval)
 
 Server -> Server : poll() receives request

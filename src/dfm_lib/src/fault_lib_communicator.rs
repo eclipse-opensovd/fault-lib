@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! IPC communication layer between reporter applications and the DFM.
 //!
@@ -18,7 +18,7 @@
 //!   registrations/status changes.
 //! - **Hash-check responses** — sent back to reporters after catalog
 //!   verification.
-//! - **Enabling-condition notifications** — broadcast to all FaultLib
+//! - **Enabling-condition notifications** — broadcast to all `FaultLib`
 //!   instances when a condition status changes.
 //!
 //! The generic [`run_dfm_loop`] function drives the DFM event loop using
@@ -28,7 +28,8 @@
 
 use common::enabling_condition::EnablingConditionNotification;
 use common::ipc_service_name::{
-    DIAGNOSTIC_FAULT_MANAGER_EVENT_SERVICE_NAME, DIAGNOSTIC_FAULT_MANAGER_HASH_CHECK_RESPONSE_SERVICE_NAME,
+    DIAGNOSTIC_FAULT_MANAGER_EVENT_SERVICE_NAME,
+    DIAGNOSTIC_FAULT_MANAGER_HASH_CHECK_RESPONSE_SERVICE_NAME,
     ENABLING_CONDITION_NOTIFICATION_SERVICE_NAME,
 };
 use common::ipc_service_type::ServiceType;
@@ -47,7 +48,7 @@ use iceoryx2::node::NodeBuilder;
 use iceoryx2::port::publisher::Publisher;
 use iceoryx2::port::subscriber::Subscriber;
 use iceoryx2::prelude::{Node, NodeName, ServiceName};
-use log::info;
+use tracing::info;
 
 const DIAGNOSTIC_FAULT_MANAGER_LISTENER_NODE_NAME: &str = "fault_listener_node";
 
@@ -69,7 +70,7 @@ pub enum TransportInitError {
 /// iceoryx2-based [`DfmTransport`] implementation (production default).
 ///
 /// Uses iceoryx2 zero-copy shared memory publishers/subscribers for
-/// communication between the DFM and reporter applications (FaultLib).
+/// communication between the DFM and reporter applications (`FaultLib`).
 pub struct Iceoryx2Transport {
     catalog_hash_response_publisher: Publisher<ServiceType, bool, ()>,
     ec_notification_publisher: Publisher<ServiceType, EnablingConditionNotification, ()>,
@@ -106,6 +107,7 @@ impl Iceoryx2Transport {
     /// Panics if iceoryx2 IPC service creation fails. These are system-level
     /// failures during initialization (no shared memory, no permissions).
     #[allow(clippy::expect_used)]
+    #[must_use]
     pub fn new() -> Self {
         Self::try_new().expect("Iceoryx2Transport initialization failed")
     }
@@ -114,15 +116,22 @@ impl Iceoryx2Transport {
     ///
     /// Prefer this over [`new`](Self::new) when the caller can handle
     /// initialization failures gracefully.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TransportInitError`] if any iceoryx2 node, service, or
+    /// port cannot be created.
     pub fn try_new() -> Result<Self, TransportInitError> {
-        let node_name = NodeName::new(DIAGNOSTIC_FAULT_MANAGER_LISTENER_NODE_NAME).map_err(|e| TransportInitError::NodeCreation(format!("{e:?}")))?;
+        let node_name = NodeName::new(DIAGNOSTIC_FAULT_MANAGER_LISTENER_NODE_NAME)
+            .map_err(|e| TransportInitError::NodeCreation(format!("{e:?}")))?;
         let node = NodeBuilder::new()
             .name(&node_name)
             .create::<ServiceType>()
             .map_err(|e| TransportInitError::NodeCreation(format!("{e:?}")))?;
 
         let diagnostic_event_subscriber_service_name =
-            ServiceName::new(DIAGNOSTIC_FAULT_MANAGER_EVENT_SERVICE_NAME).map_err(|e| TransportInitError::ServiceCreation(format!("{e:?}")))?;
+            ServiceName::new(DIAGNOSTIC_FAULT_MANAGER_EVENT_SERVICE_NAME)
+                .map_err(|e| TransportInitError::ServiceCreation(format!("{e:?}")))?;
         let diagnostic_event_subscriber_service = node
             .service_builder(&diagnostic_event_subscriber_service_name)
             .publish_subscribe::<DiagnosticEvent>()
@@ -133,8 +142,9 @@ impl Iceoryx2Transport {
             .create()
             .map_err(|e| TransportInitError::ServiceCreation(format!("{e:?}")))?;
 
-        let hash_response_service_name = ServiceName::new(DIAGNOSTIC_FAULT_MANAGER_HASH_CHECK_RESPONSE_SERVICE_NAME)
-            .map_err(|e| TransportInitError::ServiceCreation(format!("{e:?}")))?;
+        let hash_response_service_name =
+            ServiceName::new(DIAGNOSTIC_FAULT_MANAGER_HASH_CHECK_RESPONSE_SERVICE_NAME)
+                .map_err(|e| TransportInitError::ServiceCreation(format!("{e:?}")))?;
         let hash_response_service = node
             .service_builder(&hash_response_service_name)
             .publish_subscribe::<bool>()
@@ -147,7 +157,8 @@ impl Iceoryx2Transport {
 
         // Enabling condition notification publisher (DFM → FaultLib)
         let ec_notification_service_name =
-            ServiceName::new(ENABLING_CONDITION_NOTIFICATION_SERVICE_NAME).map_err(|e| TransportInitError::ServiceCreation(format!("{e:?}")))?;
+            ServiceName::new(ENABLING_CONDITION_NOTIFICATION_SERVICE_NAME)
+                .map_err(|e| TransportInitError::ServiceCreation(format!("{e:?}")))?;
         let ec_notification_service = node
             .service_builder(&ec_notification_service_name)
             .publish_subscribe::<EnablingConditionNotification>()
@@ -159,9 +170,9 @@ impl Iceoryx2Transport {
             .map_err(|e| TransportInitError::ServiceCreation(format!("{e:?}")))?;
 
         Ok(Iceoryx2Transport {
-            diagnostic_event_subscriber,
             catalog_hash_response_publisher,
             ec_notification_publisher,
+            diagnostic_event_subscriber,
             node,
         })
     }
@@ -186,7 +197,10 @@ impl Iceoryx2Transport {
             .publish_subscribe::<DiagnosticEvent>()
             .open_or_create()
             .expect("Failed to create test event service");
-        let diagnostic_event_subscriber = event_service.subscriber_builder().create().expect("Failed to create test subscriber");
+        let diagnostic_event_subscriber = event_service
+            .subscriber_builder()
+            .create()
+            .expect("Failed to create test subscriber");
 
         let hash_svc_name = ServiceName::new(&names.hash_response).unwrap();
         let hash_service = node
@@ -194,7 +208,10 @@ impl Iceoryx2Transport {
             .publish_subscribe::<bool>()
             .open_or_create()
             .expect("Failed to create test hash service");
-        let catalog_hash_response_publisher = hash_service.publisher_builder().create().expect("Failed to create test hash publisher");
+        let catalog_hash_response_publisher = hash_service
+            .publisher_builder()
+            .create()
+            .expect("Failed to create test hash publisher");
 
         let ec_svc_name = ServiceName::new(&names.ec_notification).unwrap();
         let ec_service = node
@@ -202,12 +219,15 @@ impl Iceoryx2Transport {
             .publish_subscribe::<EnablingConditionNotification>()
             .open_or_create()
             .expect("Failed to create test EC service");
-        let ec_notification_publisher = ec_service.publisher_builder().create().expect("Failed to create test EC publisher");
+        let ec_notification_publisher = ec_service
+            .publisher_builder()
+            .create()
+            .expect("Failed to create test EC publisher");
 
         Iceoryx2Transport {
-            diagnostic_event_subscriber,
             catalog_hash_response_publisher,
             ec_notification_publisher,
+            diagnostic_event_subscriber,
             node,
         }
     }
@@ -223,20 +243,35 @@ impl DfmTransport for Iceoryx2Transport {
     }
 
     fn publish_hash_response(&self, response: bool) -> Result<(), SinkError> {
-        let sample = self.catalog_hash_response_publisher.loan_uninit().map_err(|_| SinkError::TransportDown)?;
+        let sample = self
+            .catalog_hash_response_publisher
+            .loan_uninit()
+            .map_err(|_| SinkError::TransportDown)?;
         let sample = sample.write_payload(response);
-        sample.send().map_err(|_| SinkError::TransportDown).map(|_| ())
+        sample
+            .send()
+            .map_err(|_| SinkError::TransportDown)
+            .map(|_| ())
     }
 
-    fn publish_ec_notification(&self, notification: EnablingConditionNotification) -> Result<(), SinkError> {
-        let sample = self.ec_notification_publisher.loan_uninit().map_err(|_| SinkError::TransportDown)?;
+    fn publish_ec_notification(
+        &self,
+        notification: EnablingConditionNotification,
+    ) -> Result<(), SinkError> {
+        let sample = self
+            .ec_notification_publisher
+            .loan_uninit()
+            .map_err(|_| SinkError::TransportDown)?;
         let sample = sample.write_payload(notification);
-        sample.send().map_err(|_| SinkError::TransportDown).map(|_| ())
+        sample
+            .send()
+            .map_err(|_| SinkError::TransportDown)
+            .map(|_| ())
     }
 
     fn wait(&self, timeout: Duration) -> Result<bool, SinkError> {
         match self.node.wait(timeout) {
-            Ok(_) => Ok(true),
+            Ok(()) => Ok(true),
             Err(_) => Ok(false),
         }
     }
@@ -266,10 +301,12 @@ pub fn run_dfm_loop<T: DfmTransport, S: SovdFaultStateStorage>(
     shutdown: &AtomicBool,
     processor: &mut FaultRecordProcessor<S>,
     ec_registry: &mut EnablingConditionRegistry,
-    cycle_provider: Option<&Arc<std::sync::Mutex<Box<dyn crate::operation_cycle::OperationCycleProvider>>>>,
+    cycle_provider: Option<
+        &Arc<std::sync::Mutex<Box<dyn crate::operation_cycle::OperationCycleProvider>>>,
+    >,
     cycle_tracker: &Arc<std::sync::RwLock<crate::operation_cycle::OperationCycleTracker>>,
     cycle_time: Duration,
-    extensions: DfmLoopExtensions<'_, S>,
+    extensions: &DfmLoopExtensions<'_, S>,
 ) {
     info!("DFM transport listening...");
     while !shutdown.load(Ordering::Acquire) {
@@ -281,7 +318,7 @@ pub fn run_dfm_loop<T: DfmTransport, S: SovdFaultStateStorage>(
                 break;
             }
             Err(e) => {
-                log::error!("Transport wait error: {e:?}");
+                tracing::error!("Transport wait error: {e:?}");
                 break;
             }
         }
@@ -291,14 +328,18 @@ pub fn run_dfm_loop<T: DfmTransport, S: SovdFaultStateStorage>(
             // Mutex lock scope is intentionally narrow to avoid holding
             // the lock while processing IPC messages.
             let events = {
-                let mut provider = provider_arc.lock().unwrap_or_else(|e| e.into_inner());
+                let mut provider = provider_arc
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 provider.poll()
             };
             if !events.is_empty() {
-                let mut tracker = cycle_tracker.write().unwrap_or_else(|e| e.into_inner());
+                let mut tracker = cycle_tracker
+                    .write()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 let incremented = tracker.apply_events(&events);
                 for name in &incremented {
-                    log::trace!("Operation cycle '{name}' incremented via provider");
+                    tracing::trace!("Operation cycle '{name}' incremented via provider");
                 }
             }
         }
@@ -309,7 +350,7 @@ pub fn run_dfm_loop<T: DfmTransport, S: SovdFaultStateStorage>(
                 Ok(Some(e)) => e,
                 Ok(None) => break, // no more messages
                 Err(e) => {
-                    log::error!("IPC receive error: {e:?}");
+                    tracing::error!("IPC receive error: {e:?}");
                     break;
                 }
             };
@@ -326,7 +367,7 @@ pub fn run_dfm_loop<T: DfmTransport, S: SovdFaultStateStorage>(
                     let result = processor.check_hash_sum(path, hash_sum);
                     info!("Received hash: {hash_sum:?}");
                     transport.publish_hash_response(result).unwrap_or_else(|e| {
-                        log::error!("Failed to publish hash response: {e:?}");
+                        tracing::error!("Failed to publish hash response: {e:?}");
                     });
                 }
                 DiagnosticEvent::EnablingConditionRegister(entity) => {
@@ -339,9 +380,14 @@ pub fn run_dfm_loop<T: DfmTransport, S: SovdFaultStateStorage>(
                     info!("Received enabling condition status change: {id_str} -> {status:?}");
                     if let Some(new_status) = ec_registry.update_status(&id_str, *status) {
                         // Broadcast notification to all FaultLib subscribers
-                        let notification = EnablingConditionNotification { id: *id, status: new_status };
+                        let notification = EnablingConditionNotification {
+                            id: *id,
+                            status: new_status,
+                        };
                         if let Err(e) = transport.publish_ec_notification(notification) {
-                            log::error!("Failed to publish EC notification for '{id_str}': {e:?}");
+                            tracing::error!(
+                                "Failed to publish EC notification for '{id_str}': {e:?}"
+                            );
                         }
                     }
                 }
@@ -352,7 +398,7 @@ pub fn run_dfm_loop<T: DfmTransport, S: SovdFaultStateStorage>(
         if let Some(qs) = extensions.query_server
             && let Err(e) = qs.poll()
         {
-            log::error!("Query server poll error: {e:?}");
+            tracing::error!("Query server poll error: {e:?}");
         }
     }
     info!("DFM transport loop shutdown complete");
@@ -369,7 +415,8 @@ pub fn run_dfm_loop<T: DfmTransport, S: SovdFaultStateStorage>(
     clippy::expect_used,
     clippy::std_instead_of_core,
     clippy::std_instead_of_alloc,
-    clippy::arithmetic_side_effects
+    clippy::arithmetic_side_effects,
+    clippy::match_wild_err_arm
 )]
 mod tests {
     use super::*;
@@ -424,11 +471,11 @@ mod tests {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_registry();
         let cycle_tracker = make_cycle_tracker();
-        let processor = FaultRecordProcessor::new(storage, registry, cycle_tracker.clone());
+        let processor = FaultRecordProcessor::new(storage, registry, Arc::clone(&cycle_tracker));
         let mut ec_registry = EnablingConditionRegistry::new();
 
         let shutdown = Arc::new(AtomicBool::new(false));
-        let shutdown_clone = shutdown.clone();
+        let shutdown_clone = Arc::clone(&shutdown);
 
         let handle = thread::spawn(move || {
             run_dfm_loop(
@@ -439,7 +486,7 @@ mod tests {
                 None,
                 &cycle_tracker,
                 DEFAULT_DFM_CYCLE_TIME,
-                DfmLoopExtensions { query_server: None },
+                &DfmLoopExtensions { query_server: None },
             );
         });
 
@@ -469,11 +516,12 @@ mod tests {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_registry();
         let cycle_tracker = make_cycle_tracker();
-        let processor = FaultRecordProcessor::new(storage.clone(), registry, cycle_tracker.clone());
+        let processor =
+            FaultRecordProcessor::new(Arc::clone(&storage), registry, Arc::clone(&cycle_tracker));
         let mut ec_registry = EnablingConditionRegistry::new();
 
         let shutdown = Arc::new(AtomicBool::new(false));
-        let shutdown_clone = shutdown.clone();
+        let shutdown_clone = Arc::clone(&shutdown);
 
         let handle = thread::spawn(move || {
             run_dfm_loop(
@@ -484,7 +532,7 @@ mod tests {
                 None,
                 &cycle_tracker,
                 DEFAULT_DFM_CYCLE_TIME,
-                DfmLoopExtensions { query_server: None },
+                &DfmLoopExtensions { query_server: None },
             );
         });
 
@@ -505,11 +553,17 @@ mod tests {
         thread::spawn(move || {
             let _ = join_tx.send(handle.join());
         });
-        join_rx.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+        join_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
 
         // Verify the fault was stored
         let state = storage.get("test_entity", &FaultId::Numeric(42)).unwrap();
-        assert!(state.is_some(), "Communicator should have processed the fault event");
+        assert!(
+            state.is_some(),
+            "Communicator should have processed the fault event"
+        );
         let state = state.unwrap();
         assert!(state.test_failed);
         assert!(state.confirmed_dtc);
@@ -525,13 +579,13 @@ mod tests {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_registry();
         let cycle_tracker = make_cycle_tracker();
-        let processor = FaultRecordProcessor::new(storage, registry, cycle_tracker.clone());
+        let processor = FaultRecordProcessor::new(storage, registry, Arc::clone(&cycle_tracker));
 
         let ec_registry = Arc::new(std::sync::Mutex::new(EnablingConditionRegistry::new()));
-        let ec_for_thread = ec_registry.clone();
+        let ec_for_thread = Arc::clone(&ec_registry);
 
         let shutdown = Arc::new(AtomicBool::new(false));
-        let shutdown_clone = shutdown.clone();
+        let shutdown_clone = Arc::clone(&shutdown);
 
         let handle = thread::spawn(move || {
             let mut ec = ec_for_thread.lock().unwrap();
@@ -543,7 +597,7 @@ mod tests {
                 None,
                 &cycle_tracker,
                 DEFAULT_DFM_CYCLE_TIME,
-                DfmLoopExtensions { query_server: None },
+                &DfmLoopExtensions { query_server: None },
             );
         });
 
@@ -561,7 +615,10 @@ mod tests {
         thread::spawn(move || {
             let _ = join_tx.send(handle.join());
         });
-        join_rx.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+        join_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
     }
 
     // ---------- Immediate Shutdown ----------
@@ -574,12 +631,12 @@ mod tests {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_registry();
         let cycle_tracker = make_cycle_tracker();
-        let processor = FaultRecordProcessor::new(storage, registry, cycle_tracker.clone());
+        let processor = FaultRecordProcessor::new(storage, registry, Arc::clone(&cycle_tracker));
         let mut ec_registry = EnablingConditionRegistry::new();
 
         // Pre-set shutdown before starting
         let shutdown = Arc::new(AtomicBool::new(true));
-        let shutdown_clone = shutdown.clone();
+        let shutdown_clone = Arc::clone(&shutdown);
 
         let handle = thread::spawn(move || {
             run_dfm_loop(
@@ -590,7 +647,7 @@ mod tests {
                 None,
                 &cycle_tracker,
                 DEFAULT_DFM_CYCLE_TIME,
-                DfmLoopExtensions { query_server: None },
+                &DfmLoopExtensions { query_server: None },
             );
         });
 
@@ -616,11 +673,12 @@ mod tests {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_text_registry();
         let cycle_tracker = make_cycle_tracker();
-        let processor = FaultRecordProcessor::new(storage.clone(), registry, cycle_tracker.clone());
+        let processor =
+            FaultRecordProcessor::new(Arc::clone(&storage), registry, Arc::clone(&cycle_tracker));
         let mut ec_registry = EnablingConditionRegistry::new();
 
         let shutdown = Arc::new(AtomicBool::new(false));
-        let shutdown_clone = shutdown.clone();
+        let shutdown_clone = Arc::clone(&shutdown);
 
         let handle = thread::spawn(move || {
             run_dfm_loop(
@@ -631,7 +689,7 @@ mod tests {
                 None,
                 &cycle_tracker,
                 DEFAULT_DFM_CYCLE_TIME,
-                DfmLoopExtensions { query_server: None },
+                &DfmLoopExtensions { query_server: None },
             );
         });
 
@@ -639,8 +697,14 @@ mod tests {
 
         // Send two fault events
         let path = LongString::from_str_truncated("test_entity").unwrap();
-        let record_a = make_record(FaultId::Text(to_static_short_string("fault_a").unwrap()), LifecycleStage::Failed);
-        let record_b = make_record(FaultId::Text(to_static_short_string("fault_b").unwrap()), LifecycleStage::Passed);
+        let record_a = make_record(
+            FaultId::Text(to_static_short_string("fault_a").unwrap()),
+            LifecycleStage::Failed,
+        );
+        let record_b = make_record(
+            FaultId::Text(to_static_short_string("fault_b").unwrap()),
+            LifecycleStage::Passed,
+        );
         send_event(&names.event, DiagnosticEvent::Fault((path, record_a)));
         send_event(&names.event, DiagnosticEvent::Fault((path, record_b)));
 
@@ -651,16 +715,25 @@ mod tests {
         thread::spawn(move || {
             let _ = join_tx.send(handle.join());
         });
-        join_rx.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+        join_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
 
         let state_a = storage
-            .get("test_entity", &FaultId::Text(to_static_short_string("fault_a").unwrap()))
+            .get(
+                "test_entity",
+                &FaultId::Text(to_static_short_string("fault_a").unwrap()),
+            )
             .unwrap();
         assert!(state_a.is_some(), "fault_a should be stored");
         assert!(state_a.unwrap().test_failed);
 
         let state_b = storage
-            .get("test_entity", &FaultId::Text(to_static_short_string("fault_b").unwrap()))
+            .get(
+                "test_entity",
+                &FaultId::Text(to_static_short_string("fault_b").unwrap()),
+            )
             .unwrap();
         assert!(state_b.is_some(), "fault_b should be stored");
         assert!(!state_b.unwrap().test_failed);

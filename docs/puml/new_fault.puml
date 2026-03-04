@@ -1,3 +1,13 @@
+' SPDX-License-Identifier: Apache-2.0
+' SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+'
+' See the NOTICE file(s) distributed with this work for additional
+' information regarding copyright ownership.
+'
+' This program and the accompanying materials are made available under the
+' terms of the Apache License Version 2.0 which is available at
+' https://www.apache.org/licenses/LICENSE-2.0
+
 @startuml
 title Reporting fault by the app
 skinparam ParticipantPadding 20
@@ -50,10 +60,15 @@ else
     end note
     App <-- Reporter
 
-    == Async IPC (iceoryx2 zero-copy shared memory) ==
+    == Async IPC (default: iceoryx2 zero-copy shared memory) ==
+    note over IpcWorker, DiagFaultMgr
+        Transport is abstracted via **FaultSinkApi** / **DfmTransport** traits.
+        Default implementation uses iceoryx2. Swappable without
+        changing business logic (e.g. S-CORE LoLa).
+    end note
 
     IpcWorker -> IpcWorker : recv_timeout(50ms)
-    IpcWorker ->> DiagFaultMgr : iceoryx2 publish on "dfm/event"
+    IpcWorker ->> DiagFaultMgr : publish on "dfm/event"
     note right of IpcWorker
         Fire-and-forget: no response from DFM.
         On transient failure (TransportDown,

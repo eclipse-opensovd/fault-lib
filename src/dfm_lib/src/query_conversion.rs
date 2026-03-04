@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! Conversions between `SovdFault` (heap-allocated) and `IpcSovdFault`
 //! (fixed-size, IPC-safe).
@@ -36,7 +36,11 @@ use common::types::{LongString, ShortString};
 fn short_str(s: &str) -> ShortString {
     let result = ShortString::from_str_truncated(s).unwrap_or_default();
     if s.len() > result.len() {
-        log::warn!("IPC ShortString truncation: input {} bytes -> {} bytes", s.len(), result.len());
+        tracing::warn!(
+            "IPC ShortString truncation: input {} bytes -> {} bytes",
+            s.len(),
+            result.len()
+        );
     }
     result
 }
@@ -45,7 +49,11 @@ fn short_str(s: &str) -> ShortString {
 fn long_str(s: &str) -> LongString {
     let result = LongString::from_str_truncated(s).unwrap_or_default();
     if s.len() > result.len() {
-        log::warn!("IPC LongString truncation: input {} bytes -> {} bytes", s.len(), result.len());
+        tracing::warn!(
+            "IPC LongString truncation: input {} bytes -> {} bytes",
+            s.len(),
+            result.len()
+        );
     }
     result
 }
@@ -56,7 +64,7 @@ fn long_str(s: &str) -> LongString {
 pub fn sovd_fault_to_ipc(fault: &SovdFault) -> IpcSovdFault {
     let status = fault.typed_status.as_ref();
 
-    let status_mask = status.map_or(0, |s| s.compute_mask());
+    let status_mask = status.map_or(0, super::sovd_fault_manager::SovdFaultStatus::compute_mask);
 
     IpcSovdFault {
         code: short_str(&fault.code),
@@ -68,13 +76,23 @@ pub fn sovd_fault_to_ipc(fault: &SovdFault) -> IpcSovdFault {
 
         status_mask,
         test_failed: status.and_then(|s| s.test_failed).unwrap_or(false),
-        test_failed_this_operation_cycle: status.and_then(|s| s.test_failed_this_operation_cycle).unwrap_or(false),
+        test_failed_this_operation_cycle: status
+            .and_then(|s| s.test_failed_this_operation_cycle)
+            .unwrap_or(false),
         pending_dtc: status.and_then(|s| s.pending_dtc).unwrap_or(false),
         confirmed_dtc: status.and_then(|s| s.confirmed_dtc).unwrap_or(false),
-        test_not_completed_since_last_clear: status.and_then(|s| s.test_not_completed_since_last_clear).unwrap_or(false),
-        test_failed_since_last_clear: status.and_then(|s| s.test_failed_since_last_clear).unwrap_or(false),
-        test_not_completed_this_operation_cycle: status.and_then(|s| s.test_not_completed_this_operation_cycle).unwrap_or(false),
-        warning_indicator_requested: status.and_then(|s| s.warning_indicator_requested).unwrap_or(false),
+        test_not_completed_since_last_clear: status
+            .and_then(|s| s.test_not_completed_since_last_clear)
+            .unwrap_or(false),
+        test_failed_since_last_clear: status
+            .and_then(|s| s.test_failed_since_last_clear)
+            .unwrap_or(false),
+        test_not_completed_this_operation_cycle: status
+            .and_then(|s| s.test_not_completed_this_operation_cycle)
+            .unwrap_or(false),
+        warning_indicator_requested: status
+            .and_then(|s| s.warning_indicator_requested)
+            .unwrap_or(false),
 
         occurrence_counter: fault.occurrence_counter.unwrap_or(0),
         aging_counter: fault.aging_counter.unwrap_or(0),
@@ -82,9 +100,17 @@ pub fn sovd_fault_to_ipc(fault: &SovdFault) -> IpcSovdFault {
         first_occurrence_secs: parse_iso_timestamp(fault.first_occurrence.as_deref()),
         last_occurrence_secs: parse_iso_timestamp(fault.last_occurrence.as_deref()),
 
-        symptom: fault.symptom.as_ref().map(|s| long_str(s)).unwrap_or_default(),
+        symptom: fault
+            .symptom
+            .as_ref()
+            .map(|s| long_str(s))
+            .unwrap_or_default(),
         has_symptom: fault.symptom.is_some(),
-        symptom_translation_id: fault.symptom_translation_id.as_ref().map(|s| short_str(s)).unwrap_or_default(),
+        symptom_translation_id: fault
+            .symptom_translation_id
+            .as_ref()
+            .map(|s| short_str(s))
+            .unwrap_or_default(),
         has_symptom_translation_id: fault.symptom_translation_id.is_some(),
     }
 }
@@ -112,7 +138,11 @@ pub fn ipc_fault_to_sovd(ipc: &IpcSovdFault) -> SovdFault {
         severity: ipc.severity,
         status: typed_status.to_hash_map(),
         typed_status: Some(typed_status),
-        symptom: if ipc.has_symptom { Some(ipc.symptom.to_string()) } else { None },
+        symptom: if ipc.has_symptom {
+            Some(ipc.symptom.to_string())
+        } else {
+            None
+        },
         symptom_translation_id: if ipc.has_symptom_translation_id {
             Some(ipc.symptom_translation_id.to_string())
         } else {
@@ -123,12 +153,16 @@ pub fn ipc_fault_to_sovd(ipc: &IpcSovdFault) -> SovdFault {
         aging_counter: Some(ipc.aging_counter),
         healing_counter: Some(ipc.healing_counter),
         first_occurrence: if ipc.first_occurrence_secs > 0 {
-            Some(crate::sovd_fault_manager::format_unix_timestamp(ipc.first_occurrence_secs))
+            Some(crate::sovd_fault_manager::format_unix_timestamp(
+                ipc.first_occurrence_secs,
+            ))
         } else {
             None
         },
         last_occurrence: if ipc.last_occurrence_secs > 0 {
-            Some(crate::sovd_fault_manager::format_unix_timestamp(ipc.last_occurrence_secs))
+            Some(crate::sovd_fault_manager::format_unix_timestamp(
+                ipc.last_occurrence_secs,
+            ))
         } else {
             None
         },
@@ -153,7 +187,9 @@ pub fn env_data_to_ipc(env: &SovdEnvData) -> IpcEnvData {
 
 /// Convert [`IpcEnvData`] back to [`SovdEnvData`].
 pub fn ipc_env_data_to_sovd(ipc: &IpcEnvData) -> SovdEnvData {
-    ipc.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    ipc.iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
 }
 
 /// Parse an ISO 8601 timestamp string (our format: "YYYY-MM-DDThh:mm:ssZ")
@@ -162,7 +198,11 @@ pub fn ipc_env_data_to_sovd(ipc: &IpcEnvData) -> SovdEnvData {
 /// This is the inverse of `sovd_fault_manager::format_unix_timestamp`.
 /// Only supports the exact format we produce - no timezone offsets.
 /// Dates before 1970-01-01 return 0 (pre-epoch).
-#[allow(clippy::arithmetic_side_effects, clippy::cast_possible_truncation)]
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap
+)]
 fn parse_iso_timestamp(s: Option<&str>) -> u64 {
     let Some(s) = s else { return 0 };
     // Expected: "2024-01-15T09:50:00Z" (exactly 20 chars)
@@ -170,12 +210,22 @@ fn parse_iso_timestamp(s: Option<&str>) -> u64 {
         return 0;
     }
     let b = s.as_bytes();
-    let year = parse_u64(&b[0..4]);
-    let month = parse_u64(&b[5..7]);
-    let day = parse_u64(&b[8..10]);
-    let hour = parse_u64(&b[11..13]);
-    let min = parse_u64(&b[14..16]);
-    let sec = parse_u64(&b[17..19]);
+    let (Some(year_b), Some(month_b), Some(day_b), Some(hour_b), Some(min_b), Some(sec_b)) = (
+        b.get(0..4),
+        b.get(5..7),
+        b.get(8..10),
+        b.get(11..13),
+        b.get(14..16),
+        b.get(17..19),
+    ) else {
+        return 0;
+    };
+    let year = parse_u64(year_b);
+    let month = parse_u64(month_b);
+    let day = parse_u64(day_b);
+    let hour = parse_u64(hour_b);
+    let min = parse_u64(min_b);
+    let sec = parse_u64(sec_b);
 
     if year < 1970 || month == 0 || day == 0 {
         return 0;
@@ -207,14 +257,19 @@ fn parse_u64(bytes: &[u8]) -> u64 {
 /// Algorithm: Howard Hinnant's `days_from_civil`.
 ///
 /// Returns 0 for dates before 1970-01-01 (negative day counts).
-#[allow(clippy::arithmetic_side_effects, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::similar_names
+)]
 fn days_from_civil(y: i64, m: u32, d: u32) -> u64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = if y >= 0 { y } else { y - 399 } / 400;
     let yoe = (y - era * 400) as u32;
     let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe as i64 - 719_468;
+    let days = era * 146_097 + i64::from(doe) - 719_468;
     if days < 0 {
         return 0;
     }
@@ -227,7 +282,9 @@ fn days_from_civil(y: i64, m: u32, d: u32) -> u64 {
     clippy::expect_used,
     clippy::std_instead_of_core,
     clippy::std_instead_of_alloc,
-    clippy::arithmetic_side_effects
+    clippy::arithmetic_side_effects,
+    clippy::unreadable_literal,
+    clippy::doc_markdown
 )]
 mod tests {
     use super::*;
@@ -239,13 +296,20 @@ mod tests {
     use iceoryx2_bb_container::string::String as IceString;
     use std::sync::Arc;
 
-    /// Helper: create a SovdFault via the real pipeline.
+    /// Helper: create a `SovdFault` via the real pipeline.
     fn make_real_fault() -> SovdFault {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_text_registry();
-        let mut processor = FaultRecordProcessor::new(storage.clone(), registry.clone(), make_cycle_tracker());
+        let mut processor = FaultRecordProcessor::new(
+            Arc::clone(&storage),
+            Arc::clone(&registry),
+            make_cycle_tracker(),
+        );
         let path = make_path("test_entity");
-        let record = make_record(FaultId::Text(to_static_short_string("fault_a").unwrap()), LifecycleStage::Failed);
+        let record = make_record(
+            FaultId::Text(to_static_short_string("fault_a").unwrap()),
+            LifecycleStage::Failed,
+        );
         processor.process_record(&path, &record);
 
         let manager = SovdFaultManager::new(storage, registry);
@@ -278,7 +342,10 @@ mod tests {
         assert_eq!(rest_status.test_failed, orig_status.test_failed);
         assert_eq!(rest_status.confirmed_dtc, orig_status.confirmed_dtc);
         assert_eq!(rest_status.pending_dtc, orig_status.pending_dtc);
-        assert_eq!(rest_status.warning_indicator_requested, orig_status.warning_indicator_requested);
+        assert_eq!(
+            rest_status.warning_indicator_requested,
+            orig_status.warning_indicator_requested
+        );
     }
 
     #[test]
@@ -300,7 +367,10 @@ mod tests {
 
         // fault_a in make_text_registry has no summary -> symptom is None
         assert_eq!(restored.symptom, original.symptom);
-        assert_eq!(restored.symptom_translation_id, original.symptom_translation_id);
+        assert_eq!(
+            restored.symptom_translation_id,
+            original.symptom_translation_id
+        );
     }
 
     #[test]

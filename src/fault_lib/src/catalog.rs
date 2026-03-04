@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 // Re-export catalog types from common crate.
 // FaultCatalog now lives in common so that dfm_lib can use it
@@ -34,7 +34,7 @@ mod tests {
     use std::time::Duration;
 
     /// Resolves test data file paths for both Cargo and Bazel test environments.
-    /// Cargo runs from crate root, Bazel uses CARGO_MANIFEST_DIR env var.
+    /// Cargo runs from crate root, Bazel uses `CARGO_MANIFEST_DIR` env var.
     fn test_data_path(relative_path: &str) -> PathBuf {
         // First try CARGO_MANIFEST_DIR (works for both Cargo and Bazel with env set)
         if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
@@ -91,10 +91,16 @@ mod tests {
 
                 category: FaultType::Software,
                 severity: FaultSeverity::Debug,
-                compliance: ComplianceVec::try_from(&[ComplianceTag::EmissionRelevant, ComplianceTag::SafetyCritical][..]).unwrap(),
+                compliance: ComplianceVec::try_from(
+                    &[
+                        ComplianceTag::EmissionRelevant,
+                        ComplianceTag::SafetyCritical,
+                    ][..],
+                )
+                .unwrap(),
 
                 reporter_side_debounce: Some(DebounceMode::EdgeWithCooldown {
-                    cooldown: Duration::from_millis(100_u64).into(),
+                    cooldown: Duration::from_millis(100u64).into(),
                 }),
                 reporter_side_reset: None,
                 manager_side_debounce: None,
@@ -108,12 +114,18 @@ mod tests {
 
                 category: FaultType::Configuration,
                 severity: FaultSeverity::Warn,
-                compliance: ComplianceVec::try_from(&[ComplianceTag::SecurityRelevant, ComplianceTag::SafetyCritical][..]).unwrap(),
+                compliance: ComplianceVec::try_from(
+                    &[
+                        ComplianceTag::SecurityRelevant,
+                        ComplianceTag::SafetyCritical,
+                    ][..],
+                )
+                .unwrap(),
 
                 reporter_side_debounce: None,
                 reporter_side_reset: None,
                 manager_side_debounce: Some(DebounceMode::EdgeWithCooldown {
-                    cooldown: Duration::from_millis(100_u64).into(),
+                    cooldown: Duration::from_millis(100u64).into(),
                 }),
                 manager_side_reset: None,
             },
@@ -121,10 +133,14 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::indexing_slicing)]
     fn from_config() {
         let cfg = create_config();
 
-        let catalog = FaultCatalogBuilder::new().cfg_struct(cfg.clone()).unwrap().build();
+        let catalog = FaultCatalogBuilder::new()
+            .cfg_struct(cfg.clone())
+            .unwrap()
+            .build();
 
         let d1 = catalog
             .descriptor(&FaultId::Text(to_static_short_string("d1").unwrap()))
@@ -145,17 +161,24 @@ mod tests {
             faults: Vec::new(),
         };
 
-        let catalog = FaultCatalogBuilder::new().cfg_struct(cfg.clone()).unwrap().build();
+        let catalog = FaultCatalogBuilder::new()
+            .cfg_struct(cfg.clone())
+            .unwrap()
+            .build();
         let d1 = catalog.descriptor(&FaultId::Text(to_static_short_string("d1").unwrap()));
         assert_eq!(d1, Option::None);
     }
 
     #[test]
+    #[allow(clippy::indexing_slicing)]
     fn from_json_string() {
         let cfg = create_config();
         let json_string = serde_json::to_string_pretty(&cfg).unwrap();
 
-        let fault_catalog = FaultCatalogBuilder::new().json_string(json_string.as_str()).unwrap().build();
+        let fault_catalog = FaultCatalogBuilder::new()
+            .json_string(json_string.as_str())
+            .unwrap()
+            .build();
         let d1 = fault_catalog
             .descriptor(&FaultId::Text(to_static_short_string("d1").unwrap()))
             .expect("get_descriptor failed");
@@ -168,6 +191,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::indexing_slicing)]
     fn from_json_file() {
         // Note: use test_data_path helper for Cargo/Bazel compatibility
         let fault_catalog = FaultCatalogBuilder::new()
@@ -188,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Failed to build FaultCatalog")]
     fn from_not_existing_json_file() {
         let _ = FaultCatalogBuilder::new()
             .json_file(PathBuf::from("tests/data/xxx.json"))
@@ -203,13 +227,22 @@ mod tests {
             .unwrap()
             .build();
         let cfg = create_config();
-        let catalog_from_cfg = FaultCatalogBuilder::new().cfg_struct(cfg.clone()).unwrap().build();
+        let catalog_from_cfg = FaultCatalogBuilder::new()
+            .cfg_struct(cfg.clone())
+            .unwrap()
+            .build();
         let catalog_from_json = FaultCatalogBuilder::new()
             .json_string(&serde_json::to_string_pretty(&cfg).unwrap())
             .unwrap()
             .build();
 
-        assert_eq!(catalog_from_cfg.config_hash(), catalog_from_file.config_hash());
-        assert_eq!(catalog_from_cfg.config_hash(), catalog_from_json.config_hash());
+        assert_eq!(
+            catalog_from_cfg.config_hash(),
+            catalog_from_file.config_hash()
+        );
+        assert_eq!(
+            catalog_from_cfg.config_hash(),
+            catalog_from_json.config_hash()
+        );
     }
 }

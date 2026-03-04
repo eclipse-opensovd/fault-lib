@@ -1,19 +1,19 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 use crate::FaultApi;
 use crate::enabling_condition::EnablingConditionManager;
 use crate::ipc_worker::IpcWorker;
-use crate::sink::*;
+use crate::sink::FaultSinkApi;
 use crate::utils::to_static_long_string;
 use alloc::sync::Weak;
 use common::fault::FaultRecord;
@@ -24,13 +24,13 @@ use common::types::{DiagnosticEvent, LONG_STRING_CAPACITY, Sha256Vec};
 use core::time::Duration;
 use iceoryx2::port::subscriber::Subscriber;
 use iceoryx2::prelude::{NodeBuilder, ServiceName};
-use log::*;
 use std::sync::mpsc::TrySendError;
 use std::time::Instant;
 use std::{
     sync::mpsc,
     thread::{self, JoinHandle},
 };
+use tracing::{debug, error, warn};
 
 /// Initialization errors for the IPC sink and worker.
 #[derive(Debug, Clone, thiserror::Error)]
@@ -69,18 +69,18 @@ impl From<FaultManagerError> for SinkError {
     }
 }
 
-/// Request channel type used by the sink_thread to receive events
+/// Request channel type used by the `sink_thread` to receive events
 pub type WorkerReceiver = mpsc::Receiver<WorkerMsg>;
 
 #[derive(Debug)]
 pub(crate) enum WorkerMsg {
-    /// transports start message with the parent thread which will be unparked when the sink_thread thread is up and running
+    /// transports start message with the parent thread which will be unparked when the `sink_thread` thread is up and running
     Start(std::thread::Thread),
 
-    /// Sent by the FaultManagerSink when the fault monitor reports an event.
+    /// Sent by the `FaultManagerSink` when the fault monitor reports an event.
     Event { event: Box<DiagnosticEvent> },
 
-    /// Terminate the FaultManagerSink working thread
+    /// Terminate the `FaultManagerSink` working thread
     Exit,
 }
 
@@ -97,7 +97,7 @@ pub struct FaultManagerSink {
 }
 
 impl FaultManagerSink {
-    /// Create a new FaultManagerSink with IPC worker thread and hash check subscriber.
+    /// Create a new `FaultManagerSink` with IPC worker thread and hash check subscriber.
     ///
     /// # Errors
     ///
@@ -107,7 +107,7 @@ impl FaultManagerSink {
         Self::with_ec_manager(Weak::<EnablingConditionManager>::new())
     }
 
-    /// Create a new FaultManagerSink with a reference to the enabling condition manager.
+    /// Create a new `FaultManagerSink` with a reference to the enabling condition manager.
     ///
     /// The EC manager is passed to the IPC worker so it can receive
     /// enabling condition notifications from the DFM.
@@ -115,7 +115,9 @@ impl FaultManagerSink {
     /// # Errors
     ///
     /// Returns `SinkInitError` if thread spawn or iceoryx2 IPC service creation fails.
-    pub(crate) fn with_ec_manager(ec_manager: Weak<EnablingConditionManager>) -> Result<Self, SinkInitError> {
+    pub(crate) fn with_ec_manager(
+        ec_manager: Weak<EnablingConditionManager>,
+    ) -> Result<Self, SinkInitError> {
         let (tx, rx) = mpsc::sync_channel(CHANNEL_CAPACITY);
 
         // Channel for the worker to report its initialization result back.
@@ -137,7 +139,9 @@ impl FaultManagerSink {
         // Wait for worker to finish IPC resource setup.
         init_rx
             .recv_timeout(Duration::from_secs(5))
-            .map_err(|_| SinkInitError::WorkerInit("timeout waiting for worker initialization".into()))?
+            .map_err(|_| {
+                SinkInitError::WorkerInit("timeout waiting for worker initialization".into())
+            })?
             .map_err(|e| SinkInitError::WorkerInit(e.to_string()))?;
 
         tx.send(WorkerMsg::Start(thread::current()))
@@ -149,8 +153,9 @@ impl FaultManagerSink {
         let node = NodeBuilder::new()
             .create::<ServiceType>()
             .map_err(|e| SinkInitError::IpcService(format!("hash check node: {e}")))?;
-        let hash_check_response_service_name = ServiceName::new(DIAGNOSTIC_FAULT_MANAGER_HASH_CHECK_RESPONSE_SERVICE_NAME)
-            .map_err(|e| SinkInitError::IpcService(format!("hash check service name: {e}")))?;
+        let hash_check_response_service_name =
+            ServiceName::new(DIAGNOSTIC_FAULT_MANAGER_HASH_CHECK_RESPONSE_SERVICE_NAME)
+                .map_err(|e| SinkInitError::IpcService(format!("hash check service name: {e}")))?;
         let hash_check_response_service = node
             .service_builder(&hash_check_response_service_name)
             .publish_subscribe::<bool>()
@@ -170,20 +175,31 @@ impl FaultManagerSink {
 
     /// Validate catalog hash against DFM without reading from global state.
     ///
-    /// Used during initialization before the global OnceLock is committed,
+    /// Used during initialization before the global `OnceLock` is committed,
     /// so that a hash mismatch doesn't leave the system in a partial state.
-    pub(crate) fn check_catalog_hash(&self, catalog: &crate::catalog::FaultCatalog) -> Result<bool, SinkError> {
-        let catalog_id = catalog
-            .try_id()
-            .map_err(|e| SinkError::Other(alloc::borrow::Cow::Owned(format!("catalog id error: {e}"))))?;
-        let hash_vec = common::types::Sha256Vec::try_from(catalog.config_hash())
-            .map_err(|_| SinkError::Other(alloc::borrow::Cow::Borrowed("catalog hash too long for IPC")))?;
+    pub(crate) fn check_catalog_hash(
+        &self,
+        catalog: &crate::catalog::FaultCatalog,
+    ) -> Result<bool, SinkError> {
+        let catalog_id = catalog.try_id().map_err(|e| {
+            SinkError::Other(alloc::borrow::Cow::Owned(format!("catalog id error: {e}")))
+        })?;
+        let hash_vec = common::types::Sha256Vec::try_from(catalog.config_hash()).map_err(|_| {
+            SinkError::Other(alloc::borrow::Cow::Borrowed(
+                "catalog hash too long for IPC",
+            ))
+        })?;
         let event = common::types::DiagnosticEvent::Hash((catalog_id, hash_vec));
-        match self.sink_sender.try_send(WorkerMsg::Event { event: Box::new(event) }) {
+        match self.sink_sender.try_send(WorkerMsg::Event {
+            event: Box::new(event),
+        }) {
             Ok(()) => {}
             Err(TrySendError::Full(_)) => return Err(SinkError::QueueFull),
             Err(TrySendError::Disconnected(_)) => {
-                return Err(FaultManagerError::SendError("Cannot send hash check: channel disconnected".into()).into());
+                return Err(FaultManagerError::SendError(
+                    "Cannot send hash check: channel disconnected".into(),
+                )
+                .into());
             }
         }
         self.listen_hash_check_response()
@@ -192,7 +208,7 @@ impl FaultManagerSink {
     /// Listen for hash check response from DFM.
     ///
     /// Uses polling with 50ms interval. A future improvement would be
-    /// to use iceoryx2 WaitSet for true event-driven notification.
+    /// to use iceoryx2 `WaitSet` for true event-driven notification.
     fn listen_hash_check_response(&self) -> Result<bool, SinkError> {
         let start = Instant::now();
         let poll_interval = Duration::from_millis(50);
@@ -200,7 +216,9 @@ impl FaultManagerSink {
         let subscriber = self
             .hash_check_response_subscriber
             .as_ref()
-            .ok_or(SinkError::Other(alloc::borrow::Cow::Borrowed("hash check subscriber not initialized")))?;
+            .ok_or(SinkError::Other(alloc::borrow::Cow::Borrowed(
+                "hash check subscriber not initialized",
+            )))?;
 
         while start.elapsed() < TIMEOUT {
             if let Some(msg) = subscriber.receive().map_err(|_| SinkError::TransportDown)? {
@@ -239,20 +257,26 @@ fn is_valid_path(path: &str) -> bool {
     if path.contains("..") {
         return false;
     }
-    path.chars().all(|c| c.is_alphanumeric() || c == '/' || c == '.' || c == '-' || c == '_')
+    path.chars()
+        .all(|c| c.is_alphanumeric() || c == '/' || c == '.' || c == '-' || c == '_')
 }
 
 /// API to be used by the modules of the fault-lib which need to communicate with
 /// Diagnostic Fault Manager. This trait shall never become public
 impl FaultSinkApi for FaultManagerSink {
     fn send_event(&self, event: DiagnosticEvent) -> Result<(), SinkError> {
-        match self.sink_sender.try_send(WorkerMsg::Event { event: Box::new(event) }) {
+        match self.sink_sender.try_send(WorkerMsg::Event {
+            event: Box::new(event),
+        }) {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => {
                 warn!("Event queue full, dropping event");
                 Err(SinkError::QueueFull)
             }
-            Err(TrySendError::Disconnected(_)) => Err(FaultManagerError::SendError("Cannot send event: channel disconnected".into()).into()),
+            Err(TrySendError::Disconnected(_)) => Err(FaultManagerError::SendError(
+                "Cannot send event: channel disconnected".into(),
+            )
+            .into()),
         }
     }
 
@@ -264,14 +288,18 @@ impl FaultSinkApi for FaultManagerSink {
     fn publish(&self, path: &str, record: FaultRecord) -> Result<(), SinkError> {
         // Validate path before IPC
         if path.len() > MAX_PATH_LENGTH {
-            return Err(SinkError::BadDescriptor(alloc::borrow::Cow::Owned(format!(
-                "path too long: {} bytes (max {})",
-                path.len(),
-                MAX_PATH_LENGTH
-            ))));
+            return Err(SinkError::BadDescriptor(alloc::borrow::Cow::Owned(
+                format!(
+                    "path too long: {} bytes (max {})",
+                    path.len(),
+                    MAX_PATH_LENGTH
+                ),
+            )));
         }
         if !is_valid_path(path) {
-            return Err(SinkError::BadDescriptor(alloc::borrow::Cow::Borrowed("invalid path format")));
+            return Err(SinkError::BadDescriptor(alloc::borrow::Cow::Borrowed(
+                "invalid path format",
+            )));
         }
 
         let long_path = to_static_long_string(path).map_err(|_| {
@@ -281,29 +309,42 @@ impl FaultSinkApi for FaultManagerSink {
             )))
         })?;
         let event = DiagnosticEvent::Fault((long_path, record));
-        match self.sink_sender.try_send(WorkerMsg::Event { event: Box::new(event) }) {
+        match self.sink_sender.try_send(WorkerMsg::Event {
+            event: Box::new(event),
+        }) {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => {
                 warn!("Fault queue full, dropping record");
                 Err(SinkError::QueueFull)
             }
-            Err(TrySendError::Disconnected(_)) => Err(FaultManagerError::SendError("Cannot send event: channel disconnected".into()).into()),
+            Err(TrySendError::Disconnected(_)) => Err(FaultManagerError::SendError(
+                "Cannot send event: channel disconnected".into(),
+            )
+            .into()),
         }
     }
 
     fn check_fault_catalog(&self) -> Result<bool, SinkError> {
         let catalog = FaultApi::get_fault_catalog();
-        let catalog_id = catalog
-            .try_id()
-            .map_err(|e| SinkError::Other(alloc::borrow::Cow::Owned(format!("catalog id error: {e}"))))?;
-        let hash_vec = Sha256Vec::try_from(catalog.config_hash())
-            .map_err(|_| SinkError::Other(alloc::borrow::Cow::Borrowed("catalog hash too long for IPC")))?;
+        let catalog_id = catalog.try_id().map_err(|e| {
+            SinkError::Other(alloc::borrow::Cow::Owned(format!("catalog id error: {e}")))
+        })?;
+        let hash_vec = Sha256Vec::try_from(catalog.config_hash()).map_err(|_| {
+            SinkError::Other(alloc::borrow::Cow::Borrowed(
+                "catalog hash too long for IPC",
+            ))
+        })?;
         let event = DiagnosticEvent::Hash((catalog_id, hash_vec));
-        match self.sink_sender.try_send(WorkerMsg::Event { event: Box::new(event) }) {
+        match self.sink_sender.try_send(WorkerMsg::Event {
+            event: Box::new(event),
+        }) {
             Ok(()) => {}
             Err(TrySendError::Full(_)) => return Err(SinkError::QueueFull),
             Err(TrySendError::Disconnected(_)) => {
-                return Err(FaultManagerError::SendError("Cannot send hash check: channel disconnected".into()).into());
+                return Err(FaultManagerError::SendError(
+                    "Cannot send hash check: channel disconnected".into(),
+                )
+                .into());
             }
         }
         // this will wait for the response
@@ -397,7 +438,8 @@ mod tests {
         let desc = stub_descriptor(fault_id, fault_name, None, None);
         let path = "test/path";
 
-        let result = <FaultManagerSink as FaultSinkApi>::publish(&client, path, stub_record(desc.clone()));
+        let result =
+            <FaultManagerSink as FaultSinkApi>::publish(&client, path, stub_record(desc.clone()));
         assert!(result.is_ok());
 
         match rx.recv_timeout(Duration::from_millis(50)).unwrap() {
@@ -489,7 +531,8 @@ mod tests {
         let path = "test/path";
 
         // First publish fills the channel
-        let result = <FaultManagerSink as FaultSinkApi>::publish(&client, path, stub_record(desc.clone()));
+        let result =
+            <FaultManagerSink as FaultSinkApi>::publish(&client, path, stub_record(desc.clone()));
         assert!(result.is_ok());
 
         // Second publish should fail with QueueFull
@@ -507,7 +550,8 @@ mod tests {
 
         // Path longer than MAX_PATH_LENGTH
         let long_path = "a".repeat(MAX_PATH_LENGTH + 1);
-        let result = <FaultManagerSink as FaultSinkApi>::publish(&client, &long_path, stub_record(desc));
+        let result =
+            <FaultManagerSink as FaultSinkApi>::publish(&client, &long_path, stub_record(desc));
         assert!(matches!(result, Err(SinkError::BadDescriptor(_))));
     }
 
@@ -517,7 +561,11 @@ mod tests {
         let fault_name = ShortString::from_bytes("Test".as_bytes()).unwrap();
         let desc = stub_descriptor(FaultId::Numeric(1), fault_name, None, None);
 
-        let result = <FaultManagerSink as FaultSinkApi>::publish(&client, "../etc/passwd", stub_record(desc.clone()));
+        let result = <FaultManagerSink as FaultSinkApi>::publish(
+            &client,
+            "../etc/passwd",
+            stub_record(desc.clone()),
+        );
         assert!(matches!(result, Err(SinkError::BadDescriptor(_))));
 
         let result = <FaultManagerSink as FaultSinkApi>::publish(&client, "", stub_record(desc));
@@ -529,7 +577,10 @@ mod tests {
     #[test]
     fn send_event_succeeds_with_open_channel() {
         let (client, _rx) = new_for_publish_test();
-        let event = DiagnosticEvent::Hash((crate::utils::to_static_long_string("test").unwrap(), common::types::Sha256Vec::default()));
+        let event = DiagnosticEvent::Hash((
+            crate::utils::to_static_long_string("test").unwrap(),
+            common::types::Sha256Vec::default(),
+        ));
         let result = <FaultManagerSink as FaultSinkApi>::send_event(&client, event);
         assert!(result.is_ok());
     }
@@ -545,7 +596,10 @@ mod tests {
         // Drop the receiver to disconnect the channel
         drop(rx);
 
-        let event = DiagnosticEvent::Hash((crate::utils::to_static_long_string("test").unwrap(), common::types::Sha256Vec::default()));
+        let event = DiagnosticEvent::Hash((
+            crate::utils::to_static_long_string("test").unwrap(),
+            common::types::Sha256Vec::default(),
+        ));
         let result = <FaultManagerSink as FaultSinkApi>::send_event(&client, event);
         assert!(result.is_err());
     }
@@ -592,7 +646,8 @@ mod tests {
         });
 
         // Spawn receiver that drains events
-        let drain = thread::spawn(move || while rx.recv_timeout(Duration::from_millis(500)).is_ok() {});
+        let drain =
+            thread::spawn(move || while rx.recv_timeout(Duration::from_millis(500)).is_ok() {});
 
         // Spawn multiple threads publishing concurrently
         let mut handles = vec![];
@@ -601,8 +656,13 @@ mod tests {
             handles.push(thread::spawn(move || {
                 for j in 0..10 {
                     let fault_name = ShortString::from_bytes("Test".as_bytes()).unwrap();
-                    let desc = stub_descriptor(FaultId::Numeric(i * 100 + j), fault_name, None, None);
-                    let _ = <FaultManagerSink as FaultSinkApi>::publish(&*client_clone, "test/path", stub_record(desc));
+                    let desc =
+                        stub_descriptor(FaultId::Numeric(i * 100 + j), fault_name, None, None);
+                    let _ = <FaultManagerSink as FaultSinkApi>::publish(
+                        &*client_clone,
+                        "test/path",
+                        stub_record(desc),
+                    );
                 }
             }));
         }

@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use common::catalog::{FaultCatalogBuilder, FaultCatalogConfig};
@@ -18,11 +18,11 @@ use common::types::to_static_long_string;
 use common::types::to_static_short_string;
 use core::time::Duration;
 use dfm_lib::diagnostic_fault_manager::DiagnosticFaultManager;
-use dfm_lib::fault_catalog_registry::*;
-use dfm_lib::sovd_fault_manager::*;
-use dfm_lib::sovd_fault_storage::*;
-use env_logger::Env;
+use dfm_lib::fault_catalog_registry::FaultCatalogRegistry;
+use dfm_lib::sovd_fault_manager::Error;
+use dfm_lib::sovd_fault_storage::KvsSovdFaultStateStorage;
 use tempfile::tempdir;
+use tracing_subscriber::EnvFilter;
 
 fn load_hvac_config() -> FaultCatalogConfig {
     let f1 = fault::FaultDescriptor {
@@ -33,7 +33,8 @@ fn load_hvac_config() -> FaultCatalogConfig {
 
         category: fault::FaultType::Communication,
         severity: fault::FaultSeverity::Error,
-        compliance: fault::ComplianceVec::try_from(&[fault::ComplianceTag::EmissionRelevant][..]).unwrap(),
+        compliance: fault::ComplianceVec::try_from(&[fault::ComplianceTag::EmissionRelevant][..])
+            .unwrap(),
 
         reporter_side_debounce: Some(debounce::DebounceMode::HoldTime {
             duration: Duration::from_secs(60).into(),
@@ -44,19 +45,27 @@ fn load_hvac_config() -> FaultCatalogConfig {
     };
 
     let f2 = fault::FaultDescriptor {
-        id: fault::FaultId::Text(to_static_short_string("hvac.blower.speed_sensor_mismatch").unwrap()),
+        id: fault::FaultId::Text(
+            to_static_short_string("hvac.blower.speed_sensor_mismatch").unwrap(),
+        ),
 
         name: to_static_short_string("BlowerSpeedMismatch").unwrap(),
         summary: Some(to_static_long_string("Human-readable summary").unwrap()),
 
         category: fault::FaultType::Communication,
         severity: fault::FaultSeverity::Error,
-        compliance: fault::ComplianceVec::try_from(&[fault::ComplianceTag::SecurityRelevant, fault::ComplianceTag::SafetyCritical][..]).unwrap(),
+        compliance: fault::ComplianceVec::try_from(
+            &[
+                fault::ComplianceTag::SecurityRelevant,
+                fault::ComplianceTag::SafetyCritical,
+            ][..],
+        )
+        .unwrap(),
 
         reporter_side_debounce: None,
         reporter_side_reset: None,
         manager_side_debounce: Some(debounce::DebounceMode::EdgeWithCooldown {
-            cooldown: Duration::from_millis(100_u64).into(),
+            cooldown: Duration::from_millis(100u64).into(),
         }),
         manager_side_reset: None,
     };
@@ -78,10 +87,16 @@ fn load_ivi_config() -> FaultCatalogConfig {
 
         category: fault::FaultType::Software,
         severity: fault::FaultSeverity::Debug,
-        compliance: fault::ComplianceVec::try_from(&[fault::ComplianceTag::EmissionRelevant, fault::ComplianceTag::SafetyCritical][..]).unwrap(),
+        compliance: fault::ComplianceVec::try_from(
+            &[
+                fault::ComplianceTag::EmissionRelevant,
+                fault::ComplianceTag::SafetyCritical,
+            ][..],
+        )
+        .unwrap(),
 
         reporter_side_debounce: Some(debounce::DebounceMode::EdgeWithCooldown {
-            cooldown: Duration::from_millis(100_u64).into(),
+            cooldown: Duration::from_millis(100u64).into(),
         }),
         reporter_side_reset: None,
         manager_side_debounce: None,
@@ -96,12 +111,18 @@ fn load_ivi_config() -> FaultCatalogConfig {
 
         category: fault::FaultType::Configuration,
         severity: fault::FaultSeverity::Warn,
-        compliance: fault::ComplianceVec::try_from(&[fault::ComplianceTag::SecurityRelevant, fault::ComplianceTag::SafetyCritical][..]).unwrap(),
+        compliance: fault::ComplianceVec::try_from(
+            &[
+                fault::ComplianceTag::SecurityRelevant,
+                fault::ComplianceTag::SafetyCritical,
+            ][..],
+        )
+        .unwrap(),
 
         reporter_side_debounce: None,
         reporter_side_reset: None,
         manager_side_debounce: Some(debounce::DebounceMode::EdgeWithCooldown {
-            cooldown: Duration::from_millis(100_u64).into(),
+            cooldown: Duration::from_millis(100u64).into(),
         }),
         manager_side_reset: None,
     };
@@ -113,15 +134,23 @@ fn load_ivi_config() -> FaultCatalogConfig {
         faults,
     }
 }
+#[allow(clippy::indexing_slicing)]
 fn main() {
-    let env = Env::default().filter_or("RUST_LOG", "debug");
-    env_logger::init_from_env(env);
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "debug".into()))
+        .init();
 
     let storage_dir = tempdir().unwrap();
     let storage = KvsSovdFaultStateStorage::new(storage_dir.path(), 0).expect("storage init");
 
-    let hvac_catalog = FaultCatalogBuilder::new().cfg_struct(load_hvac_config()).expect("builder config").build();
-    let ivi_catalog = FaultCatalogBuilder::new().cfg_struct(load_ivi_config()).expect("builder config").build();
+    let hvac_catalog = FaultCatalogBuilder::new()
+        .cfg_struct(load_hvac_config())
+        .expect("builder config")
+        .build();
+    let ivi_catalog = FaultCatalogBuilder::new()
+        .cfg_struct(load_ivi_config())
+        .expect("builder config")
+        .build();
 
     let registry = FaultCatalogRegistry::new(vec![hvac_catalog, ivi_catalog]);
 

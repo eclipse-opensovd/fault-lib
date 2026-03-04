@@ -1,16 +1,16 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
-//! Transport abstraction for DFM ↔ FaultLib communication.
+//! Transport abstraction for DFM ↔ `FaultLib` communication.
 //!
 //! [`DfmTransport`] decouples the DFM run-loop from the concrete IPC
 //! mechanism (iceoryx2). Implementations can use shared-memory IPC,
@@ -45,25 +45,46 @@ use core::time::Duration;
 ///     fn wait(&self, timeout: Duration) -> Result<bool, SinkError> { /* ... */ }
 /// }
 /// ```
+/// # Errors
+///
+/// All methods return [`SinkError`] on transport failures.
 pub trait DfmTransport: Send + 'static {
     /// Receive the next diagnostic event, if available.
     ///
     /// Returns `Ok(None)` when no events are pending (non-blocking).
     /// Returns `Ok(Some(event))` for each queued event.
-    /// Returns `Err` on transport failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SinkError`] if the underlying transport fails.
     fn receive_event(&self) -> Result<Option<DiagnosticEvent>, SinkError>;
 
     /// Publish a catalog hash-check response back to reporters.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SinkError`] if the response cannot be published.
     fn publish_hash_response(&self, response: bool) -> Result<(), SinkError>;
 
-    /// Broadcast an enabling-condition status notification to all FaultLib
+    /// Broadcast an enabling-condition status notification to all `FaultLib`
     /// subscribers.
-    fn publish_ec_notification(&self, notification: EnablingConditionNotification) -> Result<(), SinkError>;
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SinkError`] if the notification cannot be broadcast.
+    fn publish_ec_notification(
+        &self,
+        notification: EnablingConditionNotification,
+    ) -> Result<(), SinkError>;
 
     /// Wait/sleep for one DFM cycle iteration.
     ///
     /// Returns `Ok(true)` if the node is still alive and the loop should
     /// continue. Returns `Ok(false)` if the node died and the loop should
-    /// exit. Returns `Err` on transport failure.
+    /// exit.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SinkError`] if the wait operation fails.
     fn wait(&self, timeout: Duration) -> Result<bool, SinkError>;
 }

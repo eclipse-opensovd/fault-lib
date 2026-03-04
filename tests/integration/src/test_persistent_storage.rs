@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 //! Persistent storage tests.
 //!
 //! Verifies that fault state survives across DFM restarts by using the
@@ -52,7 +52,10 @@ fn fault_state_survives_dfm_restart() {
         // Verify it's stored.
         let faults = harness.manager.get_all_faults("hvac").unwrap();
         let fault = faults.iter().find(|f| f.code == "0x7001").unwrap();
-        assert_eq!(fault.typed_status.as_ref().unwrap().confirmed_dtc, Some(true));
+        assert_eq!(
+            fault.typed_status.as_ref().unwrap().confirmed_dtc,
+            Some(true)
+        );
 
         // harness dropped here — DFM shuts down.
     }
@@ -66,8 +69,16 @@ fn fault_state_survives_dfm_restart() {
         let fault = faults.iter().find(|f| f.code == "0x7001").unwrap();
         let status = fault.typed_status.as_ref().unwrap();
 
-        assert_eq!(status.test_failed, Some(true), "test_failed should persist across restart");
-        assert_eq!(status.confirmed_dtc, Some(true), "confirmed_dtc should persist across restart");
+        assert_eq!(
+            status.test_failed,
+            Some(true),
+            "test_failed should persist across restart"
+        );
+        assert_eq!(
+            status.confirmed_dtc,
+            Some(true),
+            "confirmed_dtc should persist across restart"
+        );
     }
 }
 
@@ -88,7 +99,10 @@ fn delete_fault_clears_persistent_state() {
 
     // Confirm fault is stored.
     let (fault, _) = harness.manager.get_fault("hvac", "0x7001").unwrap();
-    assert_eq!(fault.typed_status.as_ref().unwrap().confirmed_dtc, Some(true));
+    assert_eq!(
+        fault.typed_status.as_ref().unwrap().confirmed_dtc,
+        Some(true)
+    );
 
     // Delete the fault.
     harness.manager.delete_fault("hvac", "0x7001").unwrap();
@@ -97,7 +111,11 @@ fn delete_fault_clears_persistent_state() {
     let faults = harness.manager.get_all_faults("hvac").unwrap();
     let fault = faults.iter().find(|f| f.code == "0x7001").unwrap();
     let status = fault.typed_status.as_ref().unwrap();
-    assert_eq!(status.test_failed, Some(false), "Deleted fault should have default status");
+    assert_eq!(
+        status.test_failed,
+        Some(false),
+        "Deleted fault should have default status"
+    );
     assert_eq!(status.confirmed_dtc, Some(false));
 }
 
@@ -112,7 +130,9 @@ fn delete_all_faults_clears_persistent_state() {
     // Report both HVAC faults.
     let record1 = make_fault_record(FaultId::Numeric(0x7001), LifecycleStage::Failed);
     let record2 = make_fault_record(
-        FaultId::Text(common::types::to_static_short_string("hvac.blower.speed_sensor_mismatch").unwrap()),
+        FaultId::Text(
+            common::types::to_static_short_string("hvac.blower.speed_sensor_mismatch").unwrap(),
+        ),
         LifecycleStage::Failed,
     );
     harness.processor.process_record(&path, &record1);
@@ -120,7 +140,9 @@ fn delete_all_faults_clears_persistent_state() {
 
     // Verify both are stored.
     let faults = harness.manager.get_all_faults("hvac").unwrap();
-    let all_confirmed = faults.iter().all(|f| f.typed_status.as_ref().unwrap().confirmed_dtc == Some(true));
+    let all_confirmed = faults
+        .iter()
+        .all(|f| f.typed_status.as_ref().unwrap().confirmed_dtc == Some(true));
     assert!(all_confirmed, "Both faults should be confirmed");
 
     // Delete all.
@@ -130,7 +152,17 @@ fn delete_all_faults_clears_persistent_state() {
     let faults = harness.manager.get_all_faults("hvac").unwrap();
     for fault in &faults {
         let status = fault.typed_status.as_ref().unwrap();
-        assert_eq!(status.test_failed, Some(false), "Fault {} should be cleared", fault.code);
-        assert_eq!(status.confirmed_dtc, Some(false), "Fault {} should be cleared", fault.code);
+        assert_eq!(
+            status.test_failed,
+            Some(false),
+            "Fault {} should be cleared",
+            fault.code
+        );
+        assert_eq!(
+            status.confirmed_dtc,
+            Some(false),
+            "Fault {} should be cleared",
+            fault.code
+        );
     }
 }

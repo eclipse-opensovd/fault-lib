@@ -1,3 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0
+
 [package]
 name = "dfm_lib"
 version.workspace = true
@@ -9,12 +19,11 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
-env_logger.workspace = true
 common = { path = "../common" }
 iceoryx2.workspace = true
 iceoryx2-bb-container.workspace = true
 thiserror.workspace = true
-log = { workspace = true, features = ["std"] }
+tracing.workspace = true
 rust_kvs = { git = "https://github.com/eclipse-score/persistency.git", branch = "main" }
 serde_json.workspace = true
 
@@ -22,3 +31,4 @@ serde_json.workspace = true
 mockall.workspace = true
 serial_test.workspace = true
 tempfile = "3.20"
+tracing-subscriber.workspace = true

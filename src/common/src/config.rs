@@ -1,20 +1,22 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 use crate::debounce::IpcDuration;
-use crate::{debounce::DebouncePolicy, fault::ComplianceVec, fault::FaultSeverity, types::*};
+use crate::{
+    debounce::DebouncePolicy, fault::ComplianceVec, fault::FaultSeverity, types::ShortString,
+};
 use serde::{Deserialize, Serialize};
 
 use iceoryx2::prelude::*;
-use iceoryx2_bb_container::vector::*;
+use iceoryx2_bb_container::vector::StaticVec;
 
 /// Reset rules define how and when a latched fault can be cleared.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ZeroCopySend)]
@@ -51,7 +53,7 @@ pub struct ResetPolicy {
 #[derive(Debug, Default, Clone, ZeroCopySend)]
 #[repr(C)]
 pub struct ReportOptions {
-    /// Override severity (else descriptor.default_severity).
+    /// Override severity (else `descriptor.default_severity`).
     pub severity: Option<FaultSeverity>,
     /// Attach extra metadata key-values (free form).
     pub metadata: StaticVec<(ShortString, ShortString), 8>,

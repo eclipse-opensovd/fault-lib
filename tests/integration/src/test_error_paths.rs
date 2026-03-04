@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 //! Error-path integration tests.
 //!
 //! These tests exercise fault-lib error handling and validation at the
@@ -50,7 +50,11 @@ fn process_record_with_unknown_fault_id_does_not_panic() {
 
     // Known catalog faults remain intact
     let faults = harness.manager.get_all_faults("hvac").unwrap();
-    assert_eq!(faults.len(), 2, "Known catalog faults should still be returned");
+    assert_eq!(
+        faults.len(),
+        2,
+        "Known catalog faults should still be returned"
+    );
 }
 
 /// An unknown fault ID processed multiple times does not accumulate
@@ -65,7 +69,11 @@ fn repeated_unknown_fault_id_does_not_corrupt_state() {
     let unknown_id = FaultId::Text(to_static_short_string("nonexistent.sensor").unwrap());
 
     // Process several records with the unknown ID
-    for stage in [LifecycleStage::Failed, LifecycleStage::Passed, LifecycleStage::Failed] {
+    for stage in [
+        LifecycleStage::Failed,
+        LifecycleStage::Passed,
+        LifecycleStage::Failed,
+    ] {
         let record = make_fault_record(unknown_id.clone(), stage);
         harness.processor.process_record(&path, &record);
     }
@@ -92,7 +100,11 @@ fn empty_catalog_query_returns_no_faults() {
     harness.clean_catalogs(&["empty_test"]);
 
     let faults = harness.manager.get_all_faults("empty_test").unwrap();
-    assert!(faults.is_empty(), "Empty catalog should return no faults, got: {}", faults.len());
+    assert!(
+        faults.is_empty(),
+        "Empty catalog should return no faults, got: {}",
+        faults.len()
+    );
 }
 
 /// Processing a record against an empty catalog does not panic.
@@ -132,7 +144,10 @@ fn kvs_rejects_instance_id_reuse_with_different_path() {
     // Try to rebind instance 0 to a completely different path
     let other_dir = tempfile::TempDir::new().unwrap();
     let result = KvsSovdFaultStateStorage::new(other_dir.path(), 0);
-    assert!(result.is_err(), "KVS should reject reuse of instance 0 with a different path");
+    assert!(
+        result.is_err(),
+        "KVS should reject reuse of instance 0 with a different path"
+    );
 }
 
 /// KVS storage should fail when given a regular file instead of a directory.
@@ -141,7 +156,10 @@ fn kvs_storage_rejects_file_as_storage_path() {
     let tmpfile = tempfile::NamedTempFile::new().unwrap();
     // tmpfile.path() points to a regular file, not a directory
     let result = KvsSovdFaultStateStorage::new(tmpfile.path(), 7);
-    assert!(result.is_err(), "KVS should reject a regular file as storage path");
+    assert!(
+        result.is_err(),
+        "KVS should reject a regular file as storage path"
+    );
 }
 
 // ============================================================================

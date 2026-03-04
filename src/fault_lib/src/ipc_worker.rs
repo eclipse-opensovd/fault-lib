@@ -1,20 +1,22 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 use crate::enabling_condition::EnablingConditionManager;
 use crate::fault_manager_sink::{SinkInitError, WorkerMsg, WorkerReceiver};
 use alloc::collections::VecDeque;
 use alloc::sync::Weak;
 use common::enabling_condition::EnablingConditionNotification;
-use common::ipc_service_name::{DIAGNOSTIC_FAULT_MANAGER_EVENT_SERVICE_NAME, ENABLING_CONDITION_NOTIFICATION_SERVICE_NAME};
+use common::ipc_service_name::{
+    DIAGNOSTIC_FAULT_MANAGER_EVENT_SERVICE_NAME, ENABLING_CONDITION_NOTIFICATION_SERVICE_NAME,
+};
 use common::ipc_service_type::ServiceType;
 use common::sink_error::SinkError;
 use common::types::DiagnosticEvent;
@@ -22,9 +24,9 @@ use core::time::Duration;
 use iceoryx2::port::publisher::Publisher;
 use iceoryx2::port::subscriber::Subscriber;
 use iceoryx2::prelude::{NodeBuilder, ServiceName};
-use log::*;
 use std::sync::mpsc;
 use std::time::Instant;
+use tracing::{debug, error, info, warn};
 
 // ============================================================================
 // Retry Configuration (fault_lib-internal, NOT transferred via IPC)
@@ -32,7 +34,7 @@ use std::time::Instant;
 
 /// Configuration for IPC retry behavior within the worker thread.
 ///
-/// This struct is internal to fault_lib and controls how the IPC worker
+/// This struct is internal to `fault_lib` and controls how the IPC worker
 /// handles transient send failures. It is NOT part of the IPC protocol
 /// and NOT transferred over iceoryx2.
 #[derive(Debug, Clone)]
@@ -124,7 +126,10 @@ impl IpcWorkerState {
         if self.retry_queue.len() >= self.config.cache_capacity
             && let Some(evicted) = self.retry_queue.pop_front()
         {
-            warn!("Retry cache full, evicting event after {} attempts", evicted.attempts);
+            warn!(
+                "Retry cache full, evicting event after {} attempts",
+                evicted.attempts
+            );
         }
         self.retry_queue.push_back(CachedFault::new(event));
     }
@@ -155,7 +160,10 @@ impl IpcWorkerState {
                 }
                 Err(ref e) if cached.attempts < self.config.max_retries => {
                     let delay = cached.backoff_delay(&self.config);
-                    debug!("Retry {} failed, next retry in {:?}: {:?}", cached.attempts, delay, e);
+                    debug!(
+                        "Retry {} failed, next retry in {:?}: {:?}",
+                        cached.attempts, delay, e
+                    );
                     cached.next_retry = now + delay;
                     still_pending.push_back(cached);
                 }
@@ -172,7 +180,10 @@ impl IpcWorkerState {
     fn is_transient(error: &SinkError) -> bool {
         matches!(
             error,
-            SinkError::TransportDown | SinkError::Timeout | SinkError::QueueFull | SinkError::RateLimited
+            SinkError::TransportDown
+                | SinkError::Timeout
+                | SinkError::QueueFull
+                | SinkError::RateLimited
         )
     }
 
@@ -200,7 +211,10 @@ pub struct IpcWorker {
 }
 
 impl IpcWorker {
-    pub fn new(sink_receiver: WorkerReceiver, ec_manager: Weak<EnablingConditionManager>) -> Result<Self, SinkInitError> {
+    pub fn new(
+        sink_receiver: WorkerReceiver,
+        ec_manager: Weak<EnablingConditionManager>,
+    ) -> Result<Self, SinkInitError> {
         Self::with_retry_config(sink_receiver, RetryConfig::default(), ec_manager)
     }
 
@@ -212,7 +226,12 @@ impl IpcWorker {
         retry_config: RetryConfig,
         ec_manager: Weak<EnablingConditionManager>,
     ) -> Result<Self, SinkInitError> {
-        Self::create(sink_receiver, retry_config, DIAGNOSTIC_FAULT_MANAGER_EVENT_SERVICE_NAME, ec_manager)
+        Self::create(
+            sink_receiver,
+            retry_config,
+            DIAGNOSTIC_FAULT_MANAGER_EVENT_SERVICE_NAME,
+            ec_manager,
+        )
     }
 
     /// Create an IPC worker with a custom service name (test isolation).
@@ -220,8 +239,17 @@ impl IpcWorker {
     /// Each test can supply a unique service name to avoid iceoryx2 shared
     /// memory conflicts when tests run in parallel.
     #[cfg(all(test, not(miri)))]
-    pub fn with_test_service(sink_receiver: WorkerReceiver, retry_config: RetryConfig, service_name: &str) -> Result<Self, SinkInitError> {
-        Self::create(sink_receiver, retry_config, service_name, Weak::<EnablingConditionManager>::new())
+    pub fn with_test_service(
+        sink_receiver: WorkerReceiver,
+        retry_config: RetryConfig,
+        service_name: &str,
+    ) -> Result<Self, SinkInitError> {
+        Self::create(
+            sink_receiver,
+            retry_config,
+            service_name,
+            Weak::<EnablingConditionManager>::new(),
+        )
     }
 
     /// Internal constructor: creates iceoryx2 node, service, and publisher.
@@ -239,8 +267,9 @@ impl IpcWorker {
         let node = NodeBuilder::new()
             .create::<ServiceType>()
             .map_err(|e| SinkInitError::IpcService(format!("node creation: {e}")))?;
-        let event_publisher_service_name =
-            ServiceName::new(service_name).map_err(|e| SinkInitError::IpcService(format!("service name '{service_name}': {e}")))?;
+        let event_publisher_service_name = ServiceName::new(service_name).map_err(|e| {
+            SinkInitError::IpcService(format!("service name '{service_name}': {e}"))
+        })?;
         let event_publisher_service = node
             .service_builder(&event_publisher_service_name)
             .publish_subscribe::<DiagnosticEvent>()
@@ -252,15 +281,16 @@ impl IpcWorker {
             .map_err(|e| SinkInitError::IpcService(format!("event publisher: {e}")))?;
 
         // EC notification subscriber is best-effort — may fail if DFM not running
-        let ec_notification_subscriber = ServiceName::new(ENABLING_CONDITION_NOTIFICATION_SERVICE_NAME)
-            .ok()
-            .and_then(|svc_name| {
-                node.service_builder(&svc_name)
-                    .publish_subscribe::<EnablingConditionNotification>()
-                    .open_or_create()
-                    .ok()
-            })
-            .and_then(|service| service.subscriber_builder().create().ok());
+        let ec_notification_subscriber =
+            ServiceName::new(ENABLING_CONDITION_NOTIFICATION_SERVICE_NAME)
+                .ok()
+                .and_then(|svc_name| {
+                    node.service_builder(&svc_name)
+                        .publish_subscribe::<EnablingConditionNotification>()
+                        .open_or_create()
+                        .ok()
+                })
+                .and_then(|service| service.subscriber_builder().create().ok());
 
         if ec_notification_subscriber.is_some() {
             debug!("EC notification subscriber created");
@@ -282,8 +312,13 @@ impl IpcWorker {
     /// Takes a reference and clones into shared memory — the clone cost is
     /// negligible for `#[repr(C)]` fixed-size types (effectively a memcpy).
     fn publish_event(&self, event: &DiagnosticEvent) -> Result<(), SinkError> {
-        let publisher = self.diagnostic_publisher.as_ref().ok_or(SinkError::TransportDown)?;
-        let sample = publisher.loan_uninit().map_err(|_| SinkError::TransportDown)?;
+        let publisher = self
+            .diagnostic_publisher
+            .as_ref()
+            .ok_or(SinkError::TransportDown)?;
+        let sample = publisher
+            .loan_uninit()
+            .map_err(|_| SinkError::TransportDown)?;
         let sample = sample.write_payload(event.clone());
         match sample.send().map_err(|_| SinkError::TransportDown) {
             Ok(_) => {
@@ -335,9 +370,14 @@ impl IpcWorker {
             let publisher = &self.diagnostic_publisher;
             self.state.process_retries(&|event: &DiagnosticEvent| {
                 let pub_ref = publisher.as_ref().ok_or(SinkError::TransportDown)?;
-                let sample = pub_ref.loan_uninit().map_err(|_| SinkError::TransportDown)?;
+                let sample = pub_ref
+                    .loan_uninit()
+                    .map_err(|_| SinkError::TransportDown)?;
                 let sample = sample.write_payload(event.clone());
-                sample.send().map_err(|_| SinkError::TransportDown).map(|_| ())
+                sample
+                    .send()
+                    .map_err(|_| SinkError::TransportDown)
+                    .map(|_| ())
             });
 
             // Poll for enabling condition notifications from DFM
@@ -349,16 +389,14 @@ impl IpcWorker {
     }
 
     /// Poll the enabling condition notification subscriber and dispatch
-    /// received notifications to the local EnablingConditionManager.
+    /// received notifications to the local `EnablingConditionManager`.
     fn poll_ec_notifications(&self) {
-        let subscriber = match self.ec_notification_subscriber.as_ref() {
-            Some(s) => s,
-            None => return,
+        let Some(subscriber) = self.ec_notification_subscriber.as_ref() else {
+            return;
         };
 
-        let manager = match self.ec_manager.upgrade() {
-            Some(m) => m,
-            None => return,
+        let Some(manager) = self.ec_manager.upgrade() else {
+            return;
         };
 
         // Drain all available notifications
@@ -366,7 +404,10 @@ impl IpcWorker {
             match subscriber.receive() {
                 Ok(Some(sample)) => {
                     let notification = sample.payload();
-                    debug!("Received EC notification: {} -> {:?}", notification.id, notification.status);
+                    debug!(
+                        "Received EC notification: {} -> {:?}",
+                        notification.id, notification.status
+                    );
                     manager.handle_remote_notification(&notification.id, notification.status);
                 }
                 Ok(None) => break,
@@ -386,9 +427,15 @@ impl IpcWorker {
         }
         while let Some(cached) = self.state.retry_queue.pop_front() {
             if let Err(e) = self.publish_event(&cached.event) {
-                warn!("Final flush failed for event after {} attempts: {:?}", cached.attempts, e);
+                warn!(
+                    "Final flush failed for event after {} attempts: {:?}",
+                    cached.attempts, e
+                );
             } else {
-                debug!("Final flush: event delivered after {} attempts", cached.attempts);
+                debug!(
+                    "Final flush: event delivered after {} attempts",
+                    cached.attempts
+                );
             }
         }
     }
@@ -405,7 +452,8 @@ impl IpcWorker {
     clippy::expect_used,
     clippy::std_instead_of_core,
     clippy::std_instead_of_alloc,
-    clippy::arithmetic_side_effects
+    clippy::arithmetic_side_effects,
+    clippy::match_wild_err_arm
 )]
 mod tests {
     use super::*;
@@ -492,8 +540,12 @@ mod tests {
     #[test]
     fn permanent_errors_classified_correctly() {
         assert!(!IpcWorkerState::is_transient(&SinkError::PermissionDenied));
-        assert!(!IpcWorkerState::is_transient(&SinkError::BadDescriptor("test".into())));
-        assert!(!IpcWorkerState::is_transient(&SinkError::InvalidServiceName));
+        assert!(!IpcWorkerState::is_transient(&SinkError::BadDescriptor(
+            "test".into()
+        )));
+        assert!(!IpcWorkerState::is_transient(
+            &SinkError::InvalidServiceName
+        ));
     }
 
     // ---------- cache_for_retry ----------
@@ -549,7 +601,11 @@ mod tests {
         let mut state = make_state(RetryConfig::default());
 
         state.handle_send_failure(stub_fault_event(), &SinkError::RateLimited);
-        assert_eq!(state.retry_queue_len(), 1, "RateLimited is transient, event should be cached for retry");
+        assert_eq!(
+            state.retry_queue_len(),
+            1,
+            "RateLimited is transient, event should be cached for retry"
+        );
     }
 
     // ---------- process_retries ----------
@@ -566,10 +622,15 @@ mod tests {
         });
 
         assert_eq!(call_count.load(Ordering::SeqCst), 1);
-        assert_eq!(state.retry_queue_len(), 0, "Queue should be empty after successful retry");
+        assert_eq!(
+            state.retry_queue_len(),
+            0,
+            "Queue should be empty after successful retry"
+        );
     }
 
     #[test]
+    #[allow(clippy::indexing_slicing)]
     fn process_retries_requeues_on_transient_failure() {
         let mut state = make_state(RetryConfig {
             max_retries: 5,
@@ -579,7 +640,11 @@ mod tests {
 
         // First process: fails, requeued
         state.process_retries(&|_event| Err(SinkError::TransportDown));
-        assert_eq!(state.retry_queue_len(), 1, "Should requeue on transient failure");
+        assert_eq!(
+            state.retry_queue_len(),
+            1,
+            "Should requeue on transient failure"
+        );
 
         // The requeued item has attempts=1 and a future next_retry
         let cached = &state.retry_queue[0];
@@ -625,7 +690,11 @@ mod tests {
             call_count.fetch_add(1, Ordering::SeqCst);
             Err(SinkError::TransportDown)
         });
-        assert_eq!(call_count.load(Ordering::SeqCst), 0, "Should not retry before backoff elapses");
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            0,
+            "Should not retry before backoff elapses"
+        );
         assert_eq!(state.retry_queue_len(), 1, "Event should remain in queue");
     }
 
@@ -680,7 +749,11 @@ mod tests {
                 Ok(())
             }
         });
-        assert_eq!(state.retry_queue_len(), 0, "Should be delivered after retries");
+        assert_eq!(
+            state.retry_queue_len(),
+            0,
+            "Should be delivered after retries"
+        );
         assert_eq!(fail_count.load(Ordering::SeqCst), 2);
     }
 

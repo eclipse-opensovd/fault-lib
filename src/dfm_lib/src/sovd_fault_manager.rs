@@ -1,24 +1,24 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! SOVD-compliant fault query and clear API.
 //!
 //! Provides the interface consumed by external diagnostic tools (e.g.
-//! OpenSOVD diagnostic service) to query DTC statuses, read
+//! `OpenSOVD` diagnostic service) to query DTC statuses, read
 //! environment snapshots, and request fault clears.  Backed by
 //! [`FaultCatalogRegistry`] and [`SovdFaultStateStorage`].
 
 use crate::fault_catalog_registry::FaultCatalogRegistry;
-use crate::sovd_fault_storage::{StorageError, *};
+use crate::sovd_fault_storage::{SovdFaultState, SovdFaultStateStorage, StorageError};
 use alloc::sync::Arc;
 use common::{fault, types::ShortString};
 use std::collections::HashMap;
@@ -35,7 +35,7 @@ pub enum Error {
 }
 
 /// SOVD-compliant fault status (DTC status bits).
-/// Aligned with CDA cda-sovd-interfaces FaultStatus.
+/// Aligned with CDA cda-sovd-interfaces `FaultStatus`.
 /// Follows ISO 14229 DTC status byte semantics.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SovdFaultStatus {
@@ -51,7 +51,8 @@ pub struct SovdFaultStatus {
 }
 
 impl SovdFaultStatus {
-    /// Create status from SovdFaultState (internal storage).
+    /// Create status from `SovdFaultState` (internal storage).
+    #[must_use]
     pub fn from_state(state: &SovdFaultState) -> Self {
         let mut status = Self {
             test_failed: Some(state.test_failed),
@@ -60,7 +61,9 @@ impl SovdFaultStatus {
             confirmed_dtc: Some(state.confirmed_dtc),
             test_not_completed_since_last_clear: Some(state.test_not_completed_since_last_clear),
             test_failed_since_last_clear: Some(state.test_failed_since_last_clear),
-            test_not_completed_this_operation_cycle: Some(state.test_not_completed_this_operation_cycle),
+            test_not_completed_this_operation_cycle: Some(
+                state.test_not_completed_this_operation_cycle,
+            ),
             warning_indicator_requested: Some(state.warning_indicator_requested),
             mask: None,
         };
@@ -78,6 +81,7 @@ impl SovdFaultStatus {
     /// - Bit 5: testFailedSinceLastClear
     /// - Bit 6: testNotCompletedThisOperationCycle
     /// - Bit 7: warningIndicatorRequested
+    #[must_use]
     pub fn compute_mask(&self) -> u8 {
         let mut mask = 0u8;
         if self.test_failed.unwrap_or(false) {
@@ -98,7 +102,10 @@ impl SovdFaultStatus {
         if self.test_failed_since_last_clear.unwrap_or(false) {
             mask |= 0x20;
         }
-        if self.test_not_completed_this_operation_cycle.unwrap_or(false) {
+        if self
+            .test_not_completed_this_operation_cycle
+            .unwrap_or(false)
+        {
             mask |= 0x40;
         }
         if self.warning_indicator_requested.unwrap_or(false) {
@@ -107,32 +114,42 @@ impl SovdFaultStatus {
         mask
     }
 
-    /// Convert to HashMap<String, String> for backward compat / JSON serialization.
+    /// Convert to `HashMap`<String, String> for backward compat / JSON serialization.
+    #[must_use]
     pub fn to_hash_map(&self) -> HashMap<String, String> {
         let mut map = HashMap::new();
         if let Some(v) = self.test_failed {
-            map.insert("testFailed".into(), (v as u32).to_string());
+            map.insert("testFailed".into(), u32::from(v).to_string());
         }
         if let Some(v) = self.test_failed_this_operation_cycle {
-            map.insert("testFailedThisOperationCycle".into(), (v as u32).to_string());
+            map.insert(
+                "testFailedThisOperationCycle".into(),
+                u32::from(v).to_string(),
+            );
         }
         if let Some(v) = self.pending_dtc {
-            map.insert("pendingDTC".into(), (v as u32).to_string());
+            map.insert("pendingDTC".into(), u32::from(v).to_string());
         }
         if let Some(v) = self.confirmed_dtc {
-            map.insert("confirmedDTC".into(), (v as u32).to_string());
+            map.insert("confirmedDTC".into(), u32::from(v).to_string());
         }
         if let Some(v) = self.test_not_completed_since_last_clear {
-            map.insert("testNotCompletedSinceLastClear".into(), (v as u32).to_string());
+            map.insert(
+                "testNotCompletedSinceLastClear".into(),
+                u32::from(v).to_string(),
+            );
         }
         if let Some(v) = self.test_failed_since_last_clear {
-            map.insert("testFailedSinceLastClear".into(), (v as u32).to_string());
+            map.insert("testFailedSinceLastClear".into(), u32::from(v).to_string());
         }
         if let Some(v) = self.test_not_completed_this_operation_cycle {
-            map.insert("testNotCompletedThisOperationCycle".into(), (v as u32).to_string());
+            map.insert(
+                "testNotCompletedThisOperationCycle".into(),
+                u32::from(v).to_string(),
+            );
         }
         if let Some(v) = self.warning_indicator_requested {
-            map.insert("warningIndicatorRequested".into(), (v as u32).to_string());
+            map.insert("warningIndicatorRequested".into(), u32::from(v).to_string());
         }
         if let Some(ref m) = self.mask {
             map.insert("mask".into(), m.clone());
@@ -144,7 +161,7 @@ impl SovdFaultStatus {
 /// SOVD fault representation per SOVD specification.
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct SovdFault {
-    /// Unique fault code (e.g., "0x1001" or "fault_a")
+    /// Unique fault code (e.g., "0x1001" or "`fault_a`")
     pub code: String,
     /// Human-readable display code
     pub display_code: String,
@@ -157,9 +174,9 @@ pub struct SovdFault {
     /// Fault severity level
     pub severity: u32,
     /// Dynamic status properties (DTC flags) as key-value pairs.
-    /// Used for OpenSOVD JSON wire format serialization (backward compat).
+    /// Used for `OpenSOVD` JSON wire format serialization (backward compat).
     /// When `typed_status` is `Some`, it is the authoritative source;
-    /// this HashMap is the serialization view derived from it.
+    /// this `HashMap` is the serialization view derived from it.
     pub status: HashMap<String, String>,
     /// Human-readable symptom description (from descriptor summary)
     pub symptom: Option<String>,
@@ -169,7 +186,7 @@ pub struct SovdFault {
     pub schema: Option<String>,
 
     // --- Extended fields for richer diagnostics ---
-    /// Typed SOVD status (CDA-aligned alternative to HashMap status)
+    /// Typed SOVD status (CDA-aligned alternative to `HashMap` status)
     pub typed_status: Option<SovdFaultStatus>,
     /// Number of times this fault has occurred
     pub occurrence_counter: Option<u32>,
@@ -191,8 +208,14 @@ impl SovdFault {
         Self {
             display_code: code.clone(),
             fault_translation_id: format!("fault.{}", &code),
-            symptom: descriptor.summary.as_ref().map(|s| s.to_string()),
-            symptom_translation_id: descriptor.summary.as_ref().map(|_| format!("symptom.{}", &code)),
+            symptom: descriptor
+                .summary
+                .as_ref()
+                .map(alloc::string::ToString::to_string),
+            symptom_translation_id: descriptor
+                .summary
+                .as_ref()
+                .map(|_| format!("symptom.{}", &code)),
             schema: None,
             code,
             scope: "ecu".into(),
@@ -219,12 +242,16 @@ impl SovdFault {
 
 /// Format Unix timestamp as ISO 8601 UTC string (e.g. "2024-01-15T09:50:00Z").
 ///
-/// Uses Howard Hinnant's civil_from_days algorithm to convert days since epoch
+/// Uses Howard Hinnant's `civil_from_days` algorithm to convert days since epoch
 /// to year/month/day without external dependencies.
 ///
 /// Inputs beyond year 9999 (253,402,300,799 seconds) are clamped to
 /// "9999-12-31T23:59:59Z" to prevent overflow in the `days as i64` cast.
-#[allow(clippy::arithmetic_side_effects, clippy::cast_possible_truncation)]
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::items_after_statements
+)]
 pub(crate) fn format_unix_timestamp(secs: u64) -> String {
     // Year 9999-12-31T23:59:59Z in Unix seconds.
     const MAX_SECS: u64 = 253_402_300_799;
@@ -243,7 +270,9 @@ pub(crate) fn format_unix_timestamp(secs: u64) -> String {
     let seconds = day_secs % SECS_PER_MINUTE;
 
     // Safe: MAX_SECS / 86_400 = 2_932_896 which fits in i64.
-    let (year, month, day) = civil_from_days(days as i64);
+    #[allow(clippy::cast_possible_wrap)]
+    let days_i64 = days as i64;
+    let (year, month, day) = civil_from_days(days_i64);
 
     format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
 }
@@ -251,13 +280,19 @@ pub(crate) fn format_unix_timestamp(secs: u64) -> String {
 /// Convert days since 1970-01-01 to (year, month, day).
 /// Algorithm: Howard Hinnant's `civil_from_days`
 /// Reference: <https://howardhinnant.github.io/date_algorithms.html#civil_from_days>
-#[allow(clippy::arithmetic_side_effects, clippy::cast_possible_truncation)]
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::similar_names,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;
     let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
     let doe = (z - era * 146_097) as u32;
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
+    let y = i64::from(yoe) + era * 400;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     let mp = (5 * doy + 2) / 153;
     let d = doy - (153 * mp + 2) / 5 + 1;
@@ -274,10 +309,17 @@ pub struct SovdFaultManager<S: SovdFaultStateStorage> {
 }
 
 impl<S: SovdFaultStateStorage> SovdFaultManager<S> {
+    #[must_use]
     pub fn new(storage: Arc<S>, registry: Arc<FaultCatalogRegistry>) -> Self {
         Self { storage, registry }
     }
 
+    /// List all faults for the given entity path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadArgument`] if the path is not found in the registry.
+    #[tracing::instrument(skip(self))]
     pub fn get_all_faults(&self, path: &str) -> Result<Vec<SovdFault>, Error> {
         let Some(catalog) = self.registry.catalogs.get(path) else {
             return Err(Error::BadArgument);
@@ -294,7 +336,7 @@ impl<S: SovdFaultStateStorage> SovdFaultManager<S> {
                 Ok(Some(s)) => s,
                 Ok(None) => SovdFaultState::default(),
                 Err(e) => {
-                    log::warn!("Failed to read state for {:?}: {}", descriptor.id, e);
+                    tracing::warn!("Failed to read state for {:?}: {}", descriptor.id, e);
                     SovdFaultState::default()
                 }
             };
@@ -305,7 +347,18 @@ impl<S: SovdFaultStateStorage> SovdFaultManager<S> {
         Ok(faults)
     }
 
-    pub fn get_fault(&self, path: &str, fault_code: &str) -> Result<(SovdFault, SovdEnvData), Error> {
+    /// Get a single fault and its environment data.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadArgument`] if the path is unknown, or
+    /// [`Error::NotFound`] if the fault code is not in the catalog.
+    #[tracing::instrument(skip(self))]
+    pub fn get_fault(
+        &self,
+        path: &str,
+        fault_code: &str,
+    ) -> Result<(SovdFault, SovdEnvData), Error> {
         let Some(catalog) = self.registry.catalogs.get(path) else {
             return Err(Error::BadArgument);
         };
@@ -326,13 +379,28 @@ impl<S: SovdFaultStateStorage> SovdFaultManager<S> {
         Ok((SovdFault::new(descriptor, &state), state.env_data))
     }
 
+    /// Delete all fault state for the given entity path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadArgument`] if the path is empty, or a storage error.
+    #[tracing::instrument(skip(self))]
     pub fn delete_all_faults(&self, path: &str) -> Result<(), Error> {
         if path.is_empty() {
             return Err(Error::BadArgument);
         }
-        self.storage.delete_all(path).map_err(|e| Error::Storage(format!("{e}")))
+        self.storage
+            .delete_all(path)
+            .map_err(|e| Error::Storage(format!("{e}")))
     }
 
+    /// Delete a single fault state by path and fault code.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadArgument`] if the path or code is empty, or
+    /// [`Error::NotFound`] if the fault does not exist.
+    #[tracing::instrument(skip(self))]
     pub fn delete_fault(&self, path: &str, fault_code: &str) -> Result<(), Error> {
         if path.is_empty() || fault_code.is_empty() {
             return Err(Error::BadArgument);
@@ -352,15 +420,34 @@ fn fault_id_to_code(fault_id: &fault::FaultId) -> String {
         fault::FaultId::Uuid(u) => {
             format!(
                 "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-                u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8], u[9], u[10], u[11], u[12], u[13], u[14], u[15]
+                u[0],
+                u[1],
+                u[2],
+                u[3],
+                u[4],
+                u[5],
+                u[6],
+                u[7],
+                u[8],
+                u[9],
+                u[10],
+                u[11],
+                u[12],
+                u[13],
+                u[14],
+                u[15]
             )
         }
     }
 }
 
+#[allow(clippy::naive_bytecount)]
 fn fault_id_from_code(fault_code: &str) -> Result<fault::FaultId, Error> {
     // Numeric: "0x..." or "0X..." hex prefix (matches fault_id_to_code output)
-    if let Some(hex) = fault_code.strip_prefix("0x").or_else(|| fault_code.strip_prefix("0X")) {
+    if let Some(hex) = fault_code
+        .strip_prefix("0x")
+        .or_else(|| fault_code.strip_prefix("0X"))
+    {
         let n = u32::from_str_radix(hex, 16).map_err(|_| Error::BadArgument)?;
         return Ok(fault::FaultId::Numeric(n));
     }
@@ -398,7 +485,9 @@ fn parse_uuid_string(s: &str) -> Option<[u8; 16]> {
     clippy::expect_used,
     clippy::std_instead_of_core,
     clippy::std_instead_of_alloc,
-    clippy::arithmetic_side_effects
+    clippy::arithmetic_side_effects,
+    clippy::unreadable_literal,
+    clippy::doc_markdown
 )]
 mod tests {
     use super::*;
@@ -407,7 +496,10 @@ mod tests {
     fn error_display_impl() {
         assert_eq!(format!("{}", Error::BadArgument), "bad argument");
         assert_eq!(format!("{}", Error::NotFound), "not found");
-        assert_eq!(format!("{}", Error::Storage("disk full".into())), "storage error: disk full");
+        assert_eq!(
+            format!("{}", Error::Storage("disk full".into())),
+            "storage error: disk full"
+        );
     }
 
     #[test]
@@ -510,7 +602,10 @@ mod tests {
     #[test]
     fn fault_id_from_code_parses_uuid() {
         let id = fault_id_from_code("01020304-0506-0708-090a-0b0c0d0e0f10").unwrap();
-        assert_eq!(id, fault::FaultId::Uuid([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]));
+        assert_eq!(
+            id,
+            fault::FaultId::Uuid([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+        );
     }
 
     #[test]
@@ -529,7 +624,8 @@ mod tests {
 
     #[test]
     fn fault_id_roundtrip_uuid() {
-        let original = fault::FaultId::Uuid([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+        let original =
+            fault::FaultId::Uuid([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
         let code = fault_id_to_code(&original);
         let parsed = fault_id_from_code(&code).unwrap();
         assert_eq!(original, parsed);
@@ -564,6 +660,8 @@ mod sovd_manager_tests {
         clippy::expect_used,
         clippy::std_instead_of_core,
         clippy::std_instead_of_alloc,
+        clippy::unreadable_literal,
+        clippy::doc_markdown,
         clippy::arithmetic_side_effects
     )]
 
@@ -577,7 +675,10 @@ mod sovd_manager_tests {
     use common::types::to_static_short_string;
     use std::sync::Arc;
 
-    fn make_processor_with_registry(storage: Arc<InMemoryStorage>, registry: Arc<FaultCatalogRegistry>) -> FaultRecordProcessor<InMemoryStorage> {
+    fn make_processor_with_registry(
+        storage: Arc<InMemoryStorage>,
+        registry: Arc<FaultCatalogRegistry>,
+    ) -> FaultRecordProcessor<InMemoryStorage> {
         FaultRecordProcessor::new(storage, registry, make_cycle_tracker())
     }
 
@@ -585,18 +686,25 @@ mod sovd_manager_tests {
     // SovdFaultManager query tests
     // ============================================================================
 
-    /// SovdFaultManager get_all_faults returns stored faults.
+    /// `SovdFaultManager` `get_all_faults` returns stored faults.
     #[test]
     fn sovd_manager_get_all_faults() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_text_registry();
 
         // Pre-populate via processor
-        let mut processor = make_processor_with_registry(storage.clone(), registry.clone());
+        let mut processor =
+            make_processor_with_registry(Arc::clone(&storage), Arc::clone(&registry));
         let path = make_path("test_entity");
 
-        let record1 = make_record(FaultId::Text(to_static_short_string("fault_a").unwrap()), LifecycleStage::Failed);
-        let record2 = make_record(FaultId::Text(to_static_short_string("fault_b").unwrap()), LifecycleStage::Passed);
+        let record1 = make_record(
+            FaultId::Text(to_static_short_string("fault_a").unwrap()),
+            LifecycleStage::Failed,
+        );
+        let record2 = make_record(
+            FaultId::Text(to_static_short_string("fault_b").unwrap()),
+            LifecycleStage::Passed,
+        );
         processor.process_record(&path, &record1);
         processor.process_record(&path, &record2);
 
@@ -606,7 +714,7 @@ mod sovd_manager_tests {
         assert_eq!(faults.unwrap().len(), 2);
     }
 
-    /// SovdFaultManager returns error for empty path.
+    /// `SovdFaultManager` returns error for empty path.
     #[test]
     fn sovd_manager_handles_empty_entity() {
         let storage = Arc::new(InMemoryStorage::new());
@@ -620,7 +728,7 @@ mod sovd_manager_tests {
         }
     }
 
-    /// FaultCatalogRegistry lookup by path.
+    /// `FaultCatalogRegistry` lookup by path.
     #[test]
     fn catalog_registry_lookup() {
         let config = FaultCatalogConfig {
@@ -628,14 +736,17 @@ mod sovd_manager_tests {
             version: 1,
             faults: vec![],
         };
-        let catalog = FaultCatalogBuilder::new().cfg_struct(config).unwrap().build();
+        let catalog = FaultCatalogBuilder::new()
+            .cfg_struct(config)
+            .unwrap()
+            .build();
         let registry = FaultCatalogRegistry::new(vec![catalog]);
 
         assert!(registry.get("my_entity").is_some());
         assert!(registry.get("nonexistent").is_none());
     }
 
-    /// get_fault returns NotFound for a fault ID not in the catalog.
+    /// `get_fault` returns `NotFound` for a fault ID not in the catalog.
     #[test]
     fn get_fault_missing_id_returns_not_found() {
         let storage = Arc::new(InMemoryStorage::new());
@@ -646,7 +757,7 @@ mod sovd_manager_tests {
         assert_eq!(result, Err(Error::NotFound));
     }
 
-    /// get_fault returns BadArgument for a nonexistent path (entity).
+    /// `get_fault` returns `BadArgument` for a nonexistent path (entity).
     #[test]
     fn get_fault_bad_path_returns_bad_argument() {
         let storage = Arc::new(InMemoryStorage::new());
@@ -661,15 +772,19 @@ mod sovd_manager_tests {
     // SovdFault typed_status and counters tests (Phase 6)
     // ============================================================================
 
-    /// SovdFault includes typed_status with all flags populated.
+    /// `SovdFault` includes `typed_status` with all flags populated.
     #[test]
     fn sovd_fault_includes_typed_status() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_text_registry();
-        let mut processor = make_processor_with_registry(storage.clone(), registry.clone());
+        let mut processor =
+            make_processor_with_registry(Arc::clone(&storage), Arc::clone(&registry));
         let path = make_path("test_entity");
 
-        let record = make_record(FaultId::Text(to_static_short_string("fault_a").unwrap()), LifecycleStage::Failed);
+        let record = make_record(
+            FaultId::Text(to_static_short_string("fault_a").unwrap()),
+            LifecycleStage::Failed,
+        );
         processor.process_record(&path, &record);
 
         let manager = SovdFaultManager::new(storage, registry);
@@ -683,15 +798,19 @@ mod sovd_manager_tests {
         assert!(status.mask.is_some());
     }
 
-    /// SovdFault status includes mask field in HashMap.
+    /// `SovdFault` status includes mask field in `HashMap`.
     #[test]
     fn sovd_fault_status_hashmap_includes_mask() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_text_registry();
-        let mut processor = make_processor_with_registry(storage.clone(), registry.clone());
+        let mut processor =
+            make_processor_with_registry(Arc::clone(&storage), Arc::clone(&registry));
         let path = make_path("test_entity");
 
-        let record = make_record(FaultId::Text(to_static_short_string("fault_a").unwrap()), LifecycleStage::Failed);
+        let record = make_record(
+            FaultId::Text(to_static_short_string("fault_a").unwrap()),
+            LifecycleStage::Failed,
+        );
         processor.process_record(&path, &record);
 
         let manager = SovdFaultManager::new(storage, registry);
@@ -704,15 +823,19 @@ mod sovd_manager_tests {
         assert_eq!(fault.status.get("mask"), Some(&"0x2B".to_string()));
     }
 
-    /// SovdFault includes occurrence counter (defaults to 0 for new faults).
+    /// `SovdFault` includes occurrence counter (defaults to 0 for new faults).
     #[test]
     fn sovd_fault_includes_counters() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_text_registry();
-        let mut processor = make_processor_with_registry(storage.clone(), registry.clone());
+        let mut processor =
+            make_processor_with_registry(Arc::clone(&storage), Arc::clone(&registry));
         let path = make_path("test_entity");
 
-        let record = make_record(FaultId::Text(to_static_short_string("fault_a").unwrap()), LifecycleStage::Failed);
+        let record = make_record(
+            FaultId::Text(to_static_short_string("fault_a").unwrap()),
+            LifecycleStage::Failed,
+        );
         processor.process_record(&path, &record);
 
         let manager = SovdFaultManager::new(storage, registry);
@@ -725,15 +848,19 @@ mod sovd_manager_tests {
         assert_eq!(fault.healing_counter, Some(0));
     }
 
-    /// SovdFault preserves existing fields (symptom, schema, translation_id).
+    /// `SovdFault` preserves existing fields (symptom, schema, `translation_id`).
     #[test]
     fn sovd_fault_preserves_existing_fields() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_text_registry();
-        let mut processor = make_processor_with_registry(storage.clone(), registry.clone());
+        let mut processor =
+            make_processor_with_registry(Arc::clone(&storage), Arc::clone(&registry));
         let path = make_path("test_entity");
 
-        let record = make_record(FaultId::Text(to_static_short_string("fault_a").unwrap()), LifecycleStage::Failed);
+        let record = make_record(
+            FaultId::Text(to_static_short_string("fault_a").unwrap()),
+            LifecycleStage::Failed,
+        );
         processor.process_record(&path, &record);
 
         let manager = SovdFaultManager::new(storage, registry);
@@ -749,21 +876,26 @@ mod sovd_manager_tests {
         assert!(!fault.fault_translation_id.is_empty());
     }
 
-    /// All three FaultId variants (Text, Numeric, UUID) work through the full
+    /// All three `FaultId` variants (Text, Numeric, UUID) work through the full
     /// SOVD pipeline: process → store → query.
     #[test]
     fn sovd_manager_mixed_fault_id_variants() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_mixed_registry();
-        let mut processor = make_processor_with_registry(storage.clone(), registry.clone());
+        let mut processor =
+            make_processor_with_registry(Arc::clone(&storage), Arc::clone(&registry));
         let path = make_path("mixed_entity");
 
         // Process one record per variant
-        let record_text = make_record(FaultId::Text(to_static_short_string("fault_text").unwrap()), LifecycleStage::Failed);
+        let record_text = make_record(
+            FaultId::Text(to_static_short_string("fault_text").unwrap()),
+            LifecycleStage::Failed,
+        );
         let record_numeric = make_record(FaultId::Numeric(0x1001), LifecycleStage::Failed);
         let record_uuid = make_record(
             FaultId::Uuid([
-                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+                0x0f, 0x10,
             ]),
             LifecycleStage::Failed,
         );
@@ -778,23 +910,30 @@ mod sovd_manager_tests {
         // Text fault → code is the literal text
         let text_fault = faults.iter().find(|f| f.code == "fault_text").unwrap();
         assert_eq!(text_fault.fault_name, "Text Fault");
-        assert_eq!(text_fault.typed_status.as_ref().unwrap().test_failed, Some(true));
+        assert_eq!(
+            text_fault.typed_status.as_ref().unwrap().test_failed,
+            Some(true)
+        );
 
         // Numeric fault → code is hex-formatted
         let numeric_fault = faults.iter().find(|f| f.code == "0x1001").unwrap();
         assert_eq!(numeric_fault.fault_name, "Numeric Fault");
 
         // UUID fault → code is standard UUID format
-        let uuid_fault = faults.iter().find(|f| f.code == "01020304-0506-0708-090a-0b0c0d0e0f10").unwrap();
+        let uuid_fault = faults
+            .iter()
+            .find(|f| f.code == "01020304-0506-0708-090a-0b0c0d0e0f10")
+            .unwrap();
         assert_eq!(uuid_fault.fault_name, "UUID Fault");
     }
 
-    /// get_fault with numeric code "0x1001" correctly resolves to Numeric variant.
+    /// `get_fault` with numeric code "0x1001" correctly resolves to Numeric variant.
     #[test]
     fn sovd_manager_get_fault_numeric_code() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_mixed_registry();
-        let mut processor = make_processor_with_registry(storage.clone(), registry.clone());
+        let mut processor =
+            make_processor_with_registry(Arc::clone(&storage), Arc::clone(&registry));
         let path = make_path("mixed_entity");
 
         let record = make_record(FaultId::Numeric(0x1001), LifecycleStage::Failed);
@@ -806,34 +945,39 @@ mod sovd_manager_tests {
         assert_eq!(fault.fault_name, "Numeric Fault");
     }
 
-    /// get_fault with UUID code correctly resolves to Uuid variant.
+    /// `get_fault` with UUID code correctly resolves to Uuid variant.
     #[test]
     fn sovd_manager_get_fault_uuid_code() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_mixed_registry();
-        let mut processor = make_processor_with_registry(storage.clone(), registry.clone());
+        let mut processor =
+            make_processor_with_registry(Arc::clone(&storage), Arc::clone(&registry));
         let path = make_path("mixed_entity");
 
         let record = make_record(
             FaultId::Uuid([
-                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+                0x0f, 0x10,
             ]),
             LifecycleStage::Failed,
         );
         processor.process_record(&path, &record);
 
         let manager = SovdFaultManager::new(storage, registry);
-        let (fault, _env) = manager.get_fault("mixed_entity", "01020304-0506-0708-090a-0b0c0d0e0f10").unwrap();
+        let (fault, _env) = manager
+            .get_fault("mixed_entity", "01020304-0506-0708-090a-0b0c0d0e0f10")
+            .unwrap();
         assert_eq!(fault.code, "01020304-0506-0708-090a-0b0c0d0e0f10");
         assert_eq!(fault.fault_name, "UUID Fault");
     }
 
-    /// delete_fault with numeric code removes the correct entry.
+    /// `delete_fault` with numeric code removes the correct entry.
     #[test]
     fn sovd_manager_delete_fault_numeric() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_mixed_registry();
-        let mut processor = make_processor_with_registry(storage.clone(), registry.clone());
+        let mut processor =
+            make_processor_with_registry(Arc::clone(&storage), Arc::clone(&registry));
         let path = make_path("mixed_entity");
 
         let record = make_record(FaultId::Numeric(0x1001), LifecycleStage::Failed);
@@ -844,7 +988,7 @@ mod sovd_manager_tests {
         assert!(result.is_ok());
     }
 
-    /// SovdFault includes ISO 8601 timestamps when occurrence data is present.
+    /// `SovdFault` includes ISO 8601 timestamps when occurrence data is present.
     #[test]
     fn sovd_fault_timestamp_iso8601_format() {
         use crate::sovd_fault_storage::SovdFaultState;
@@ -861,18 +1005,28 @@ mod sovd_manager_tests {
             ..Default::default()
         };
         storage
-            .put("test_entity", &FaultId::Text(to_static_short_string("fault_a").unwrap()), state)
+            .put(
+                "test_entity",
+                &FaultId::Text(to_static_short_string("fault_a").unwrap()),
+                state,
+            )
             .unwrap();
 
         let manager = SovdFaultManager::new(storage, registry);
         let faults = manager.get_all_faults("test_entity").unwrap();
         let fault = faults.iter().find(|f| f.code == "fault_a").unwrap();
 
-        assert_eq!(fault.first_occurrence.as_deref(), Some("2000-01-01T00:00:00Z"));
-        assert_eq!(fault.last_occurrence.as_deref(), Some("2024-01-15T09:50:00Z"));
+        assert_eq!(
+            fault.first_occurrence.as_deref(),
+            Some("2000-01-01T00:00:00Z")
+        );
+        assert_eq!(
+            fault.last_occurrence.as_deref(),
+            Some("2024-01-15T09:50:00Z")
+        );
     }
 
-    /// SovdFault symptom field comes from descriptor summary.
+    /// `SovdFault` symptom field comes from descriptor summary.
     #[test]
     fn sovd_fault_symptom_from_descriptor_summary() {
         use crate::sovd_fault_storage::SovdFaultState;
@@ -886,7 +1040,9 @@ mod sovd_manager_tests {
             confirmed_dtc: true,
             ..Default::default()
         };
-        storage.put("mixed_entity", &FaultId::Numeric(0x1001), state).unwrap();
+        storage
+            .put("mixed_entity", &FaultId::Numeric(0x1001), state)
+            .unwrap();
 
         let manager = SovdFaultManager::new(storage, registry);
         let faults = manager.get_all_faults("mixed_entity").unwrap();

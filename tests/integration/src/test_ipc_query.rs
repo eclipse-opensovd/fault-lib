@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! Integration tests for the DFM query/clear API.
 //!
@@ -64,7 +64,11 @@ fn direct_query_get_fault_with_env_data() {
     let mut harness = TestHarness::new(vec![hvac_catalog_config()]);
     harness.clean_catalogs(&["hvac"]);
 
-    let record = make_fault_record_with_env(FaultId::Numeric(0x7001), LifecycleStage::Failed, &[("temp", "42"), ("pressure", "1013")]);
+    let record = make_fault_record_with_env(
+        FaultId::Numeric(0x7001),
+        LifecycleStage::Failed,
+        &[("temp", "42"), ("pressure", "1013")],
+    );
     let path = make_path("hvac");
     harness.processor.process_record(&path, &record);
 
@@ -113,7 +117,10 @@ fn direct_query_delete_all_faults() {
 #[serial]
 fn direct_query_bad_path_returns_bad_argument() {
     let harness = TestHarness::new(vec![hvac_catalog_config()]);
-    assert_eq!(harness.manager.get_all_faults("nonexistent"), Err(Error::BadArgument));
+    assert_eq!(
+        harness.manager.get_all_faults("nonexistent"),
+        Err(Error::BadArgument)
+    );
 }
 
 #[test]
@@ -121,7 +128,10 @@ fn direct_query_bad_path_returns_bad_argument() {
 fn direct_query_not_found_fault_code() {
     let mut harness = TestHarness::new(vec![hvac_catalog_config()]);
     harness.clean_catalogs(&["hvac"]);
-    assert_eq!(harness.manager.get_fault("hvac", "0xFFFF"), Err(Error::NotFound));
+    assert_eq!(
+        harness.manager.get_fault("hvac", "0xFFFF"),
+        Err(Error::NotFound)
+    );
 }
 
 // ============================================================================
@@ -137,13 +147,22 @@ fn start_dfm_with_faults(
     configs: Vec<common::catalog::FaultCatalogConfig>,
     faults: &[(FaultId, LifecycleStage)],
     entity: &str,
-) -> (DiagnosticFaultManager<KvsSovdFaultStateStorage>, tempfile::TempDir) {
+) -> (
+    DiagnosticFaultManager<KvsSovdFaultStateStorage>,
+    tempfile::TempDir,
+) {
     let dir = tempfile::TempDir::new().expect("temp dir");
     let instance_id = KVS_INSTANCE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let storage = Arc::new(KvsSovdFaultStateStorage::new(dir.path(), instance_id).expect("storage"));
+    let storage =
+        Arc::new(KvsSovdFaultStateStorage::new(dir.path(), instance_id).expect("storage"));
     let catalogs: Vec<_> = configs
         .iter()
-        .map(|cfg| FaultCatalogBuilder::new().cfg_struct(cfg.clone()).expect("builder").build())
+        .map(|cfg| {
+            FaultCatalogBuilder::new()
+                .cfg_struct(cfg.clone())
+                .expect("builder")
+                .build()
+        })
         .collect();
     let registry = Arc::new(FaultCatalogRegistry::new(catalogs));
     let cycle_tracker = Arc::new(RwLock::new(OperationCycleTracker::new()));
@@ -151,7 +170,8 @@ fn start_dfm_with_faults(
     // Process faults into storage, then drop processor + registry + tracker
     // to release Arc references so we can unwrap the storage.
     {
-        let mut processor = FaultRecordProcessor::new(Arc::clone(&storage), Arc::clone(&registry), cycle_tracker);
+        let mut processor =
+            FaultRecordProcessor::new(Arc::clone(&storage), Arc::clone(&registry), cycle_tracker);
         let path = make_path(entity);
         for (id, stage) in faults {
             let record = make_fault_record(id.clone(), *stage);
@@ -166,7 +186,12 @@ fn start_dfm_with_faults(
     let dfm_registry = FaultCatalogRegistry::new(
         configs
             .into_iter()
-            .map(|cfg| FaultCatalogBuilder::new().cfg_struct(cfg).expect("builder").build())
+            .map(|cfg| {
+                FaultCatalogBuilder::new()
+                    .cfg_struct(cfg)
+                    .expect("builder")
+                    .build()
+            })
             .collect(),
     );
 
@@ -192,7 +217,11 @@ fn start_dfm_with_faults(
 #[test]
 #[serial(ipc)]
 fn ipc_e2e_query_all_faults() {
-    let (dfm, _dir) = start_dfm_with_faults(vec![hvac_catalog_config()], &[(FaultId::Numeric(0x7001), LifecycleStage::Failed)], "hvac");
+    let (dfm, _dir) = start_dfm_with_faults(
+        vec![hvac_catalog_config()],
+        &[(FaultId::Numeric(0x7001), LifecycleStage::Failed)],
+        "hvac",
+    );
 
     let client = Iceoryx2DfmQuery::new().expect("IPC client");
     let faults = client.get_all_faults("hvac").unwrap();
@@ -208,7 +237,11 @@ fn ipc_e2e_query_all_faults() {
 #[test]
 #[serial(ipc)]
 fn ipc_e2e_get_single_fault() {
-    let (dfm, _dir) = start_dfm_with_faults(vec![hvac_catalog_config()], &[(FaultId::Numeric(0x7001), LifecycleStage::Failed)], "hvac");
+    let (dfm, _dir) = start_dfm_with_faults(
+        vec![hvac_catalog_config()],
+        &[(FaultId::Numeric(0x7001), LifecycleStage::Failed)],
+        "hvac",
+    );
 
     let client = Iceoryx2DfmQuery::new().expect("IPC client");
     let (fault, _env) = client.get_fault("hvac", "0x7001").unwrap();
@@ -221,7 +254,11 @@ fn ipc_e2e_get_single_fault() {
 #[test]
 #[serial(ipc)]
 fn ipc_e2e_delete_single_fault() {
-    let (dfm, _dir) = start_dfm_with_faults(vec![hvac_catalog_config()], &[(FaultId::Numeric(0x7001), LifecycleStage::Failed)], "hvac");
+    let (dfm, _dir) = start_dfm_with_faults(
+        vec![hvac_catalog_config()],
+        &[(FaultId::Numeric(0x7001), LifecycleStage::Failed)],
+        "hvac",
+    );
 
     let client = Iceoryx2DfmQuery::new().expect("IPC client");
     client.delete_fault("hvac", "0x7001").unwrap();
@@ -235,7 +272,11 @@ fn ipc_e2e_delete_single_fault() {
 #[test]
 #[serial(ipc)]
 fn ipc_e2e_delete_all_faults() {
-    let (dfm, _dir) = start_dfm_with_faults(vec![hvac_catalog_config()], &[(FaultId::Numeric(0x7001), LifecycleStage::Failed)], "hvac");
+    let (dfm, _dir) = start_dfm_with_faults(
+        vec![hvac_catalog_config()],
+        &[(FaultId::Numeric(0x7001), LifecycleStage::Failed)],
+        "hvac",
+    );
 
     let client = Iceoryx2DfmQuery::new().expect("IPC client");
     client.delete_all_faults("hvac").unwrap();
@@ -254,7 +295,10 @@ fn ipc_e2e_bad_path_returns_bad_argument() {
     let (dfm, _dir) = start_dfm_with_faults(vec![hvac_catalog_config()], &[], "hvac");
 
     let client = Iceoryx2DfmQuery::new().expect("IPC client");
-    assert_eq!(client.get_all_faults("nonexistent"), Err(Error::BadArgument));
+    assert_eq!(
+        client.get_all_faults("nonexistent"),
+        Err(Error::BadArgument)
+    );
 
     drop(dfm);
 }

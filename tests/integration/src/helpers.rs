@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 //! Shared helpers for integration tests.
 //!
 //! Provides a convenience [`TestHarness`] that wires up all DFM components
@@ -39,7 +39,8 @@ use tempfile::TempDir;
 /// To work around this, every test uses the **same** directory for KVS
 /// instance 0. Tests are serialized with `#[serial]` to prevent parallel
 /// data corruption, and each test cleans the data via `delete_all_faults`.
-static SHARED_STORAGE_DIR: LazyLock<TempDir> = LazyLock::new(|| TempDir::new().expect("failed to create shared storage dir"));
+static SHARED_STORAGE_DIR: LazyLock<TempDir> =
+    LazyLock::new(|| TempDir::new().expect("failed to create shared storage dir"));
 
 /// Returns the path of the shared KVS storage directory.
 pub fn shared_storage_path() -> &'static Path {
@@ -67,15 +68,22 @@ impl TestHarness {
     /// Build a harness using an explicit storage path. Useful for persistence
     /// tests where the same directory is reused across harness instances.
     pub fn with_storage_path(configs: Vec<FaultCatalogConfig>, storage_path: &Path) -> Self {
-        let storage = Arc::new(KvsSovdFaultStateStorage::new(storage_path, 0).expect("storage init"));
+        let storage =
+            Arc::new(KvsSovdFaultStateStorage::new(storage_path, 0).expect("storage init"));
         let catalogs: Vec<_> = configs
             .into_iter()
-            .map(|cfg| FaultCatalogBuilder::new().cfg_struct(cfg).expect("builder config").build())
+            .map(|cfg| {
+                FaultCatalogBuilder::new()
+                    .cfg_struct(cfg)
+                    .expect("builder config")
+                    .build()
+            })
             .collect();
         let registry = Arc::new(FaultCatalogRegistry::new(catalogs));
         let cycle_tracker = Arc::new(RwLock::new(OperationCycleTracker::new()));
 
-        let processor = FaultRecordProcessor::new(Arc::clone(&storage), Arc::clone(&registry), cycle_tracker);
+        let processor =
+            FaultRecordProcessor::new(Arc::clone(&storage), Arc::clone(&registry), cycle_tracker);
         let manager = SovdFaultManager::new(storage, registry);
 
         Self { processor, manager }
@@ -111,7 +119,8 @@ pub fn hvac_catalog_config() -> FaultCatalogConfig {
                 summary: None,
                 category: FaultType::Communication,
                 severity: FaultSeverity::Error,
-                compliance: ComplianceVec::try_from(&[ComplianceTag::EmissionRelevant][..]).unwrap(),
+                compliance: ComplianceVec::try_from(&[ComplianceTag::EmissionRelevant][..])
+                    .unwrap(),
                 reporter_side_debounce: Some(DebounceMode::HoldTime {
                     duration: Duration::from_secs(60).into(),
                 }),
@@ -120,12 +129,23 @@ pub fn hvac_catalog_config() -> FaultCatalogConfig {
                 manager_side_reset: None,
             },
             FaultDescriptor {
-                id: FaultId::Text(to_static_short_string("hvac.blower.speed_sensor_mismatch").unwrap()),
+                id: FaultId::Text(
+                    to_static_short_string("hvac.blower.speed_sensor_mismatch").unwrap(),
+                ),
                 name: to_static_short_string("BlowerSpeedMismatch").unwrap(),
-                summary: Some(to_static_long_string("Blower motor speed does not match commanded value").unwrap()),
+                summary: Some(
+                    to_static_long_string("Blower motor speed does not match commanded value")
+                        .unwrap(),
+                ),
                 category: FaultType::Communication,
                 severity: FaultSeverity::Error,
-                compliance: ComplianceVec::try_from(&[ComplianceTag::SecurityRelevant, ComplianceTag::SafetyCritical][..]).unwrap(),
+                compliance: ComplianceVec::try_from(
+                    &[
+                        ComplianceTag::SecurityRelevant,
+                        ComplianceTag::SafetyCritical,
+                    ][..],
+                )
+                .unwrap(),
                 reporter_side_debounce: None,
                 reporter_side_reset: None,
                 manager_side_debounce: Some(DebounceMode::EdgeWithCooldown {
@@ -145,7 +165,9 @@ pub fn ivi_catalog_config() -> FaultCatalogConfig {
         faults: vec![FaultDescriptor {
             id: FaultId::Text(to_static_short_string("ivi.display.init_timeout").unwrap()),
             name: to_static_short_string("DisplayInitTimeout").unwrap(),
-            summary: Some(to_static_long_string("Display initialization exceeded 5s timeout").unwrap()),
+            summary: Some(
+                to_static_long_string("Display initialization exceeded 5s timeout").unwrap(),
+            ),
             category: FaultType::Software,
             severity: FaultSeverity::Warn,
             compliance: ComplianceVec::new(),
@@ -180,10 +202,19 @@ pub fn make_fault_record(fault_id: FaultId, stage: LifecycleStage) -> FaultRecor
 }
 
 /// Build a [`FaultRecord`] with environment data attached.
-pub fn make_fault_record_with_env(fault_id: FaultId, stage: LifecycleStage, env: &[(&str, &str)]) -> FaultRecord {
+pub fn make_fault_record_with_env(
+    fault_id: FaultId,
+    stage: LifecycleStage,
+    env: &[(&str, &str)],
+) -> FaultRecord {
     let env_data = MetadataVec::try_from(
         &env.iter()
-            .map(|(k, v)| (to_static_short_string(k).unwrap(), to_static_short_string(v).unwrap()))
+            .map(|(k, v)| {
+                (
+                    to_static_short_string(k).unwrap(),
+                    to_static_short_string(v).unwrap(),
+                )
+            })
             .collect::<Vec<_>>()[..],
     )
     .unwrap();

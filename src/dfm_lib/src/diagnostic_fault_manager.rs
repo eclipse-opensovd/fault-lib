@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! Top-level Diagnostic Fault Manager (DFM) orchestrator.
 //!
@@ -25,7 +25,9 @@
 use crate::{
     enabling_condition_registry::EnablingConditionRegistry,
     fault_catalog_registry::FaultCatalogRegistry,
-    fault_lib_communicator::{DEFAULT_DFM_CYCLE_TIME, DfmLoopExtensions, Iceoryx2Transport, run_dfm_loop},
+    fault_lib_communicator::{
+        DEFAULT_DFM_CYCLE_TIME, DfmLoopExtensions, Iceoryx2Transport, run_dfm_loop,
+    },
     fault_record_processor::FaultRecordProcessor,
     operation_cycle::{OperationCycleProvider, OperationCycleTracker},
     query_server::DfmQueryServer,
@@ -35,11 +37,11 @@ use crate::{
 };
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, Ordering};
-use log::{error, info};
 use std::{
     sync::{Mutex, RwLock},
     thread::{self, JoinHandle},
 };
+use tracing::{error, info};
 
 /// Central DFM orchestrator, generic over storage `S` and transport `T`.
 ///
@@ -59,13 +61,14 @@ pub struct DiagnosticFaultManager<S: SovdFaultStateStorage, T: DfmTransport = Ic
 }
 
 impl<S: SovdFaultStateStorage + 'static> DiagnosticFaultManager<S, Iceoryx2Transport> {
-    /// Create a new DiagnosticFaultManager with default iceoryx2 transport.
+    /// Create a new `DiagnosticFaultManager` with default iceoryx2 transport.
     ///
     /// # Panics
     ///
     /// Panics if the receiver thread cannot be spawned. This is a system-level
     /// failure that indicates a fundamentally broken environment.
     #[allow(clippy::expect_used)]
+    #[tracing::instrument(skip(storage, registry))]
     pub fn new(storage: S, registry: FaultCatalogRegistry) -> Self {
         Self::with_cycle_provider(storage, registry, None)
     }
@@ -81,7 +84,11 @@ impl<S: SovdFaultStateStorage + 'static> DiagnosticFaultManager<S, Iceoryx2Trans
     ///
     /// Panics if the receiver thread cannot be spawned.
     #[allow(clippy::expect_used)]
-    pub fn with_cycle_provider(storage: S, registry: FaultCatalogRegistry, provider: Option<Box<dyn OperationCycleProvider>>) -> Self {
+    pub fn with_cycle_provider(
+        storage: S,
+        registry: FaultCatalogRegistry,
+        provider: Option<Box<dyn OperationCycleProvider>>,
+    ) -> Self {
         Self::with_transport(storage, registry, provider, false, Iceoryx2Transport::new)
     }
 
@@ -125,9 +132,14 @@ impl<S: SovdFaultStateStorage + 'static, T: DfmTransport> DiagnosticFaultManager
         let storage = Arc::new(storage);
         let registry = Arc::new(registry);
         let cycle_tracker = Arc::new(RwLock::new(OperationCycleTracker::new()));
-        let processor = FaultRecordProcessor::new(Arc::clone(&storage), Arc::clone(&registry), Arc::clone(&cycle_tracker));
+        let processor = FaultRecordProcessor::new(
+            Arc::clone(&storage),
+            Arc::clone(&registry),
+            Arc::clone(&cycle_tracker),
+        );
 
-        let cycle_provider: Option<Arc<Mutex<Box<dyn OperationCycleProvider>>>> = provider.map(|p| Arc::new(Mutex::new(p)));
+        let cycle_provider: Option<Arc<Mutex<Box<dyn OperationCycleProvider>>>> =
+            provider.map(|p| Arc::new(Mutex::new(p)));
         let worker_cycle_provider = cycle_provider.clone();
         let worker_cycle_tracker = Arc::clone(&cycle_tracker);
         let worker_storage = Arc::clone(&storage);
@@ -141,13 +153,17 @@ impl<S: SovdFaultStateStorage + 'static, T: DfmTransport> DiagnosticFaultManager
                 let transport = transport_factory();
 
                 let query_server = if enable_query_server {
-                    match iceoryx2::node::NodeBuilder::new().create::<common::ipc_service_type::ServiceType>() {
+                    match iceoryx2::node::NodeBuilder::new()
+                        .create::<common::ipc_service_type::ServiceType>()
+                    {
                         Ok(query_node) => {
                             let sovd = SovdFaultManager::new(worker_storage, worker_registry);
                             match DfmQueryServer::new(&query_node, sovd) {
                                 Ok(server) => Some(server),
                                 Err(e) => {
-                                    error!("Failed to create DfmQueryServer, query/clear disabled: {e}");
+                                    error!(
+                                        "Failed to create DfmQueryServer, query/clear disabled: {e}"
+                                    );
                                     None
                                 }
                             }
@@ -173,7 +189,7 @@ impl<S: SovdFaultStateStorage + 'static, T: DfmTransport> DiagnosticFaultManager
                     worker_cycle_provider.as_ref(),
                     &worker_cycle_tracker,
                     DEFAULT_DFM_CYCLE_TIME,
-                    extensions,
+                    &extensions,
                 );
             })
             .expect("Failed to spawn the fault_lib_receiver_thread");
@@ -194,15 +210,18 @@ impl<S: SovdFaultStateStorage + 'static, T: DfmTransport> DiagnosticFaultManager
     /// External lifecycle events (power-on, ignition, etc.) should use this
     /// to increment the appropriate cycle counters, which in turn drive
     /// fault aging/reset evaluation.
+    #[must_use]
     pub fn cycle_tracker(&self) -> &Arc<RwLock<OperationCycleTracker>> {
         &self.cycle_tracker
     }
 
     /// Provides shared access to the operation cycle provider, if one was set.
+    #[must_use]
     pub fn cycle_provider(&self) -> Option<&Arc<Mutex<Box<dyn OperationCycleProvider>>>> {
         self.cycle_provider.as_ref()
     }
 
+    #[must_use]
     pub fn create_sovd_fault_manager(&self) -> SovdFaultManager<S> {
         SovdFaultManager::new(Arc::clone(&self.storage), Arc::clone(&self.registry))
     }
@@ -211,6 +230,7 @@ impl<S: SovdFaultStateStorage + 'static, T: DfmTransport> DiagnosticFaultManager
     ///
     /// This is the preferred way to obtain a query API handle when the SOVD
     /// consumer runs in the same process as the DFM.
+    #[must_use]
     pub fn query_api(&self) -> crate::query_api::DirectDfmQuery<S> {
         crate::query_api::DirectDfmQuery::new(Arc::clone(&self.storage), Arc::clone(&self.registry))
     }
@@ -234,7 +254,9 @@ impl<S: SovdFaultStateStorage, T: DfmTransport> Drop for DiagnosticFaultManager<
             match join_rx.recv_timeout(DROP_JOIN_TIMEOUT) {
                 Ok(Ok(())) => info!("fault_lib_receiver_thread done"),
                 Ok(Err(err)) => error!("fault_lib_receiver_thread panicked: {err:?}"),
-                Err(_) => error!("fault_lib_receiver_thread did not exit within {DROP_JOIN_TIMEOUT:?}, abandoning"),
+                Err(_) => error!(
+                    "fault_lib_receiver_thread did not exit within {DROP_JOIN_TIMEOUT:?}, abandoning"
+                ),
             }
         }
     }
@@ -255,7 +277,9 @@ mod tests {
 
     /// Unwrap Arc<FaultCatalogRegistry> from test helpers into owned value.
     fn owned_registry() -> FaultCatalogRegistry {
-        Arc::try_unwrap(make_text_registry()).ok().expect("Arc has exactly one strong ref")
+        Arc::try_unwrap(make_text_registry())
+            .ok()
+            .expect("Arc has exactly one strong ref")
     }
 
     // ---------- Wiring and construction ----------
@@ -278,7 +302,11 @@ mod tests {
     #[serial(ipc)]
     fn dfm_with_cycle_provider_stores_provider() {
         let provider = ManualCycleProvider::new();
-        let dfm = DiagnosticFaultManager::with_cycle_provider(InMemoryStorage::new(), owned_registry(), Some(Box::new(provider)));
+        let dfm = DiagnosticFaultManager::with_cycle_provider(
+            InMemoryStorage::new(),
+            owned_registry(),
+            Some(Box::new(provider)),
+        );
 
         assert!(dfm.cycle_provider().is_some());
         drop(dfm);
@@ -287,7 +315,11 @@ mod tests {
     #[test]
     #[serial(ipc)]
     fn dfm_without_cycle_provider_returns_none() {
-        let dfm = DiagnosticFaultManager::with_cycle_provider(InMemoryStorage::new(), owned_registry(), None);
+        let dfm = DiagnosticFaultManager::with_cycle_provider(
+            InMemoryStorage::new(),
+            owned_registry(),
+            None,
+        );
 
         assert!(dfm.cycle_provider().is_none());
         drop(dfm);
@@ -302,7 +334,11 @@ mod tests {
 
         let sovd_manager = dfm.create_sovd_fault_manager();
         let faults = sovd_manager.get_all_faults("test_entity").unwrap();
-        assert_eq!(faults.len(), 2, "Should return all descriptors from catalog");
+        assert_eq!(
+            faults.len(),
+            2,
+            "Should return all descriptors from catalog"
+        );
 
         drop(dfm);
     }

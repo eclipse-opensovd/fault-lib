@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 // Test utilities are exclusively used by tests — unwrap/expect is acceptable.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use crate::reporter::ReporterConfig;
@@ -51,6 +51,11 @@ pub fn unique_ipc_service_name(prefix: &str) -> String {
 }
 
 #[allow(dead_code)]
+/// # Panics
+///
+/// Panics if the static string conversion fails (should never happen
+/// with hard-coded test values).
+#[must_use]
 pub fn stub_source() -> SourceId {
     SourceId {
         entity: to_static_short_string("source").unwrap(),
@@ -62,6 +67,7 @@ pub fn stub_source() -> SourceId {
 }
 
 #[allow(dead_code)]
+#[must_use]
 pub fn stub_config() -> ReporterConfig {
     ReporterConfig {
         source: stub_source(),
@@ -71,7 +77,13 @@ pub fn stub_config() -> ReporterConfig {
 }
 
 #[allow(dead_code)]
-pub fn stub_descriptor(id: FaultId, name: ShortString, debounce: Option<DebounceMode>, reset: Option<ResetPolicy>) -> FaultDescriptor {
+#[must_use]
+pub fn stub_descriptor(
+    id: FaultId,
+    name: ShortString,
+    debounce: Option<DebounceMode>,
+    reset: Option<ResetPolicy>,
+) -> FaultDescriptor {
     FaultDescriptor {
         id,
         name,
@@ -87,6 +99,7 @@ pub fn stub_descriptor(id: FaultId, name: ShortString, debounce: Option<Debounce
 }
 
 #[allow(dead_code)]
+#[must_use]
 pub fn stub_record(desc: FaultDescriptor) -> FaultRecord {
     FaultRecord {
         id: desc.id,
@@ -98,6 +111,11 @@ pub fn stub_record(desc: FaultDescriptor) -> FaultRecord {
     }
 }
 
+/// # Panics
+///
+/// Panics if the test descriptors cannot be constructed (should never
+/// happen with hard-coded values).
+#[must_use]
 pub fn create_dummy_descriptors() -> Vec<FaultDescriptor> {
     let d1 = FaultDescriptor {
         id: FaultId::Text(to_static_short_string("d1").unwrap()),
@@ -107,10 +125,16 @@ pub fn create_dummy_descriptors() -> Vec<FaultDescriptor> {
 
         category: FaultType::Software,
         severity: FaultSeverity::Debug,
-        compliance: ComplianceVec::try_from(&[ComplianceTag::EmissionRelevant, ComplianceTag::SafetyCritical][..]).unwrap(),
+        compliance: ComplianceVec::try_from(
+            &[
+                ComplianceTag::EmissionRelevant,
+                ComplianceTag::SafetyCritical,
+            ][..],
+        )
+        .unwrap(),
 
         reporter_side_debounce: Some(DebounceMode::EdgeWithCooldown {
-            cooldown: Duration::from_millis(100_u64).into(),
+            cooldown: Duration::from_millis(100u64).into(),
         }),
         reporter_side_reset: None,
         manager_side_debounce: None,
@@ -125,18 +149,28 @@ pub fn create_dummy_descriptors() -> Vec<FaultDescriptor> {
 
         category: FaultType::Configuration,
         severity: FaultSeverity::Warn,
-        compliance: ComplianceVec::try_from(&[ComplianceTag::SecurityRelevant, ComplianceTag::SafetyCritical][..]).unwrap(),
+        compliance: ComplianceVec::try_from(
+            &[
+                ComplianceTag::SecurityRelevant,
+                ComplianceTag::SafetyCritical,
+            ][..],
+        )
+        .unwrap(),
 
         reporter_side_debounce: None,
         reporter_side_reset: None,
         manager_side_debounce: Some(DebounceMode::EdgeWithCooldown {
-            cooldown: Duration::from_millis(100_u64).into(),
+            cooldown: Duration::from_millis(100u64).into(),
         }),
         manager_side_reset: None,
     };
     vec![d1, d2]
 }
 
+/// # Panics
+///
+/// Panics if serialization of the dummy descriptors fails.
+#[must_use]
 pub fn load_dummy_config_file() -> String {
     serde_json::to_string(&create_dummy_descriptors()).expect("serde_json::to_string failed")
 }
@@ -145,7 +179,7 @@ pub fn load_dummy_config_file() -> String {
 // Mock Sink Implementations (implement FaultSinkApi trait)
 // ============================================================================
 
-/// Sink that records all published FaultRecords for test assertions.
+/// Sink that records all published `FaultRecords` for test assertions.
 #[allow(dead_code)]
 pub struct RecordingSink {
     records: Mutex<Vec<FaultRecord>>,
@@ -159,14 +193,23 @@ impl Default for RecordingSink {
 
 #[allow(dead_code)]
 impl RecordingSink {
+    #[must_use]
     pub fn new() -> Self {
-        Self { records: Mutex::new(vec![]) }
+        Self {
+            records: Mutex::new(vec![]),
+        }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
     pub fn received_records(&self) -> Vec<FaultRecord> {
         self.records.lock().expect("RecordingSink poisoned").clone()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
     pub fn count(&self) -> usize {
         self.records.lock().expect("RecordingSink poisoned").len()
     }
@@ -174,7 +217,10 @@ impl RecordingSink {
 
 impl FaultSinkApi for RecordingSink {
     fn publish(&self, _path: &str, record: FaultRecord) -> Result<(), SinkError> {
-        self.records.lock().expect("RecordingSink poisoned").push(record);
+        self.records
+            .lock()
+            .expect("RecordingSink poisoned")
+            .push(record);
         Ok(())
     }
     fn check_fault_catalog(&self) -> Result<bool, SinkError> {
@@ -190,6 +236,7 @@ pub struct SlowSink {
 
 #[allow(dead_code)]
 impl SlowSink {
+    #[must_use]
     pub fn new(delay: Duration) -> Self {
         Self { delay }
     }
@@ -219,8 +266,11 @@ impl Default for AtomicCountingSink {
 
 #[allow(dead_code)]
 impl AtomicCountingSink {
+    #[must_use]
     pub fn new() -> Self {
-        Self { count: AtomicUsize::new(0) }
+        Self {
+            count: AtomicUsize::new(0),
+        }
     }
     pub fn count(&self) -> usize {
         self.count.load(Ordering::Acquire)
@@ -245,14 +295,17 @@ pub struct FailingSink {
 
 #[allow(dead_code)]
 impl FailingSink {
+    #[must_use]
     pub fn new(error: SinkError) -> Self {
         Self { error }
     }
 
+    #[must_use]
     pub fn transport_down() -> Self {
         Self::new(SinkError::TransportDown)
     }
 
+    #[must_use]
     pub fn timeout() -> Self {
         Self::new(SinkError::Timeout)
     }

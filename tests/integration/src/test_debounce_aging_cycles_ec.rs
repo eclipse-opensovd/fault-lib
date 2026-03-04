@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 //! E2E tests for debounce, aging, operation cycles, and enabling conditions.
 //!
 //! These integration tests exercise the full DFM pipeline for each
@@ -199,12 +199,23 @@ fn aging_power_cycles_clears_after_threshold() {
 
     // Build harness with custom cycle tracker
     let storage_dir = shared_storage_path();
-    let storage = Arc::new(dfm_lib::sovd_fault_storage::KvsSovdFaultStateStorage::new(storage_dir, 0).expect("storage init"));
-    let catalog = common::catalog::FaultCatalogBuilder::new().cfg_struct(config).unwrap().build();
-    let registry = Arc::new(dfm_lib::fault_catalog_registry::FaultCatalogRegistry::new(vec![catalog]));
+    let storage = Arc::new(
+        dfm_lib::sovd_fault_storage::KvsSovdFaultStateStorage::new(storage_dir, 0)
+            .expect("storage init"),
+    );
+    let catalog = common::catalog::FaultCatalogBuilder::new()
+        .cfg_struct(config)
+        .unwrap()
+        .build();
+    let registry = Arc::new(dfm_lib::fault_catalog_registry::FaultCatalogRegistry::new(
+        vec![catalog],
+    ));
     let cycle_tracker = Arc::new(RwLock::new(OperationCycleTracker::new()));
-    let mut processor =
-        dfm_lib::fault_record_processor::FaultRecordProcessor::new(Arc::clone(&storage), Arc::clone(&registry), Arc::clone(&cycle_tracker));
+    let mut processor = dfm_lib::fault_record_processor::FaultRecordProcessor::new(
+        Arc::clone(&storage),
+        Arc::clone(&registry),
+        Arc::clone(&cycle_tracker),
+    );
     let manager = dfm_lib::sovd_fault_manager::SovdFaultManager::new(storage, registry);
     let _ = manager.delete_all_faults("aging_test");
 
@@ -271,7 +282,14 @@ fn operation_cycle_boundary_resets_per_cycle_flags() {
 
     let faults = harness.manager.get_all_faults("hvac").unwrap();
     let fault = faults.iter().find(|f| f.code == "0x7001").unwrap();
-    assert_eq!(fault.typed_status.as_ref().unwrap().test_failed_this_operation_cycle, Some(true));
+    assert_eq!(
+        fault
+            .typed_status
+            .as_ref()
+            .unwrap()
+            .test_failed_this_operation_cycle,
+        Some(true)
+    );
 
     // New operation cycle boundary
     harness.processor.on_new_operation_cycle("hvac");
@@ -279,7 +297,11 @@ fn operation_cycle_boundary_resets_per_cycle_flags() {
     let faults = harness.manager.get_all_faults("hvac").unwrap();
     let fault = faults.iter().find(|f| f.code == "0x7001").unwrap();
     assert_eq!(
-        fault.typed_status.as_ref().unwrap().test_failed_this_operation_cycle,
+        fault
+            .typed_status
+            .as_ref()
+            .unwrap()
+            .test_failed_this_operation_cycle,
         Some(false),
         "test_failed_this_operation_cycle should reset on new cycle"
     );
@@ -313,10 +335,14 @@ fn enabling_condition_status_transitions() {
 
     // Same status again — no change
     let no_change = registry.update_status("vehicle.speed.valid", EnablingConditionStatus::Active);
-    assert_eq!(no_change, None, "Same status should return None (no change)");
+    assert_eq!(
+        no_change, None,
+        "Same status should return None (no change)"
+    );
 
     // Deactivate
-    let deactivated = registry.update_status("vehicle.speed.valid", EnablingConditionStatus::Inactive);
+    let deactivated =
+        registry.update_status("vehicle.speed.valid", EnablingConditionStatus::Inactive);
     assert_eq!(deactivated, Some(EnablingConditionStatus::Inactive));
 
     // Unknown condition is auto-registered
@@ -351,7 +377,10 @@ fn debounce_rapid_events_eventually_fire() {
 
     let faults = harness.manager.get_all_faults("debounce_test").unwrap();
     let fault = faults.iter().find(|f| f.code == "0xD001").unwrap();
-    assert_eq!(fault.typed_status.as_ref().unwrap().test_failed, Some(false));
+    assert_eq!(
+        fault.typed_status.as_ref().unwrap().test_failed,
+        Some(false)
+    );
 
     // 5th event: fires
     harness.processor.process_record(&path, &record);

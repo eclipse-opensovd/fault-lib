@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! Persistent storage layer for SOVD fault state.
 //!
@@ -47,6 +47,7 @@ pub enum StorageError {
     NotFound,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct SovdFaultState {
     // Individual boolean fields are used instead of a packed integer for type
@@ -96,7 +97,10 @@ impl KvsSerialize for SovdFaultState {
             "test_failed_this_operation_cycle".to_string(),
             self.test_failed_this_operation_cycle.to_kvs()?,
         );
-        map.insert("test_failed_since_last_clear".to_string(), self.test_failed_since_last_clear.to_kvs()?);
+        map.insert(
+            "test_failed_since_last_clear".to_string(),
+            self.test_failed_since_last_clear.to_kvs()?,
+        );
         map.insert(
             "test_not_completed_this_operation_cycle".to_string(),
             self.test_not_completed_this_operation_cycle.to_kvs()?,
@@ -107,7 +111,10 @@ impl KvsSerialize for SovdFaultState {
         );
         map.insert("pending_dtc".to_string(), self.pending_dtc.to_kvs()?);
         map.insert("confirmed_dtc".to_string(), self.confirmed_dtc.to_kvs()?);
-        map.insert("warning_indicator_requested".to_string(), self.warning_indicator_requested.to_kvs()?);
+        map.insert(
+            "warning_indicator_requested".to_string(),
+            self.warning_indicator_requested.to_kvs()?,
+        );
         let kvs_env_data = self
             .env_data
             .iter()
@@ -118,22 +125,29 @@ impl KvsSerialize for SovdFaultState {
         // Aging counters — propagate error on out-of-range values rather
         // than silently clamping. Silent fallback could mask data corruption
         // in long-running automotive systems.
-        map.insert("occurrence_counter".to_string(), KvsValue::from(i64::from(self.occurrence_counter)));
-        map.insert("aging_counter".to_string(), KvsValue::from(i64::from(self.aging_counter)));
-        map.insert("healing_counter".to_string(), KvsValue::from(i64::from(self.healing_counter)));
+        map.insert(
+            "occurrence_counter".to_string(),
+            KvsValue::from(i64::from(self.occurrence_counter)),
+        );
+        map.insert(
+            "aging_counter".to_string(),
+            KvsValue::from(i64::from(self.aging_counter)),
+        );
+        map.insert(
+            "healing_counter".to_string(),
+            KvsValue::from(i64::from(self.healing_counter)),
+        );
         map.insert(
             "first_occurrence_secs".to_string(),
-            KvsValue::from(
-                i64::try_from(self.first_occurrence_secs)
-                    .map_err(|_| ErrorCode::SerializationFailed("first_occurrence_secs out of i64 range".to_string()))?,
-            ),
+            KvsValue::from(i64::try_from(self.first_occurrence_secs).map_err(|_| {
+                ErrorCode::SerializationFailed("first_occurrence_secs out of i64 range".to_string())
+            })?),
         );
         map.insert(
             "last_occurrence_secs".to_string(),
-            KvsValue::from(
-                i64::try_from(self.last_occurrence_secs)
-                    .map_err(|_| ErrorCode::SerializationFailed("last_occurrence_secs out of i64 range".to_string()))?,
-            ),
+            KvsValue::from(i64::try_from(self.last_occurrence_secs).map_err(|_| {
+                ErrorCode::SerializationFailed("last_occurrence_secs out of i64 range".to_string())
+            })?),
         );
 
         map.to_kvs()
@@ -143,9 +157,13 @@ impl KvsSerialize for SovdFaultState {
 impl KvsDeserialize for SovdFaultState {
     type Error = ErrorCode;
 
+    #[allow(clippy::items_after_statements)]
     fn from_kvs(kvs_value: &KvsValue) -> Result<Self, Self::Error> {
         if let KvsValue::Object(map) = kvs_value {
-            let kvs_env_data = KvsMap::from_kvs(map.get("env_data").ok_or(ErrorCode::DeserializationFailed("env_data".to_string()))?)?;
+            let kvs_env_data = KvsMap::from_kvs(
+                map.get("env_data")
+                    .ok_or(ErrorCode::DeserializationFailed("env_data".to_string()))?,
+            )?;
             let mut env_data = HashMap::new();
 
             for (k, v) in kvs_env_data {
@@ -159,8 +177,14 @@ impl KvsDeserialize for SovdFaultState {
             fn get_u32(map: &KvsMap, key: &str) -> Result<u32, ErrorCode> {
                 match map.get(key) {
                     Some(v) => {
-                        let i = i64::from_kvs(v).map_err(|_| ErrorCode::DeserializationFailed(format!("{key}: not an i64")))?;
-                        u32::try_from(i).map_err(|_| ErrorCode::DeserializationFailed(format!("{key}: value {i} out of u32 range")))
+                        let i = i64::from_kvs(v).map_err(|_| {
+                            ErrorCode::DeserializationFailed(format!("{key}: not an i64"))
+                        })?;
+                        u32::try_from(i).map_err(|_| {
+                            ErrorCode::DeserializationFailed(format!(
+                                "{key}: value {i} out of u32 range"
+                            ))
+                        })
                     }
                     None => Ok(0),
                 }
@@ -168,8 +192,14 @@ impl KvsDeserialize for SovdFaultState {
             fn get_u64(map: &KvsMap, key: &str) -> Result<u64, ErrorCode> {
                 match map.get(key) {
                     Some(v) => {
-                        let i = i64::from_kvs(v).map_err(|_| ErrorCode::DeserializationFailed(format!("{key}: not an i64")))?;
-                        u64::try_from(i).map_err(|_| ErrorCode::DeserializationFailed(format!("{key}: value {i} out of u64 range")))
+                        let i = i64::from_kvs(v).map_err(|_| {
+                            ErrorCode::DeserializationFailed(format!("{key}: not an i64"))
+                        })?;
+                        u64::try_from(i).map_err(|_| {
+                            ErrorCode::DeserializationFailed(format!(
+                                "{key}: value {i} out of u64 range"
+                            ))
+                        })
                     }
                     None => Ok(0),
                 }
@@ -181,32 +211,44 @@ impl KvsDeserialize for SovdFaultState {
                         .ok_or(ErrorCode::DeserializationFailed("test_failed".to_string()))?,
                 )?,
                 test_failed_this_operation_cycle: bool::from_kvs(
-                    map.get("test_failed_this_operation_cycle")
-                        .ok_or(ErrorCode::DeserializationFailed("test_failed_this_operation_cycle".to_string()))?,
+                    map.get("test_failed_this_operation_cycle").ok_or(
+                        ErrorCode::DeserializationFailed(
+                            "test_failed_this_operation_cycle".to_string(),
+                        ),
+                    )?,
                 )?,
                 test_failed_since_last_clear: bool::from_kvs(
-                    map.get("test_failed_since_last_clear")
-                        .ok_or(ErrorCode::DeserializationFailed("test_failed_since_last_clear".to_string()))?,
+                    map.get("test_failed_since_last_clear").ok_or(
+                        ErrorCode::DeserializationFailed(
+                            "test_failed_since_last_clear".to_string(),
+                        ),
+                    )?,
                 )?,
                 test_not_completed_this_operation_cycle: bool::from_kvs(
-                    map.get("test_not_completed_this_operation_cycle")
-                        .ok_or(ErrorCode::DeserializationFailed("test_not_completed_this_operation_cycle".to_string()))?,
+                    map.get("test_not_completed_this_operation_cycle").ok_or(
+                        ErrorCode::DeserializationFailed(
+                            "test_not_completed_this_operation_cycle".to_string(),
+                        ),
+                    )?,
                 )?,
                 test_not_completed_since_last_clear: bool::from_kvs(
-                    map.get("test_not_completed_since_last_clear")
-                        .ok_or(ErrorCode::DeserializationFailed("test_not_completed_since_last_clear".to_string()))?,
+                    map.get("test_not_completed_since_last_clear").ok_or(
+                        ErrorCode::DeserializationFailed(
+                            "test_not_completed_since_last_clear".to_string(),
+                        ),
+                    )?,
                 )?,
                 pending_dtc: bool::from_kvs(
                     map.get("pending_dtc")
                         .ok_or(ErrorCode::DeserializationFailed("pending_dtc".to_string()))?,
                 )?,
-                confirmed_dtc: bool::from_kvs(
-                    map.get("confirmed_dtc")
-                        .ok_or(ErrorCode::DeserializationFailed("confirmed_dtc".to_string()))?,
-                )?,
+                confirmed_dtc: bool::from_kvs(map.get("confirmed_dtc").ok_or(
+                    ErrorCode::DeserializationFailed("confirmed_dtc".to_string()),
+                )?)?,
                 warning_indicator_requested: bool::from_kvs(
-                    map.get("warning_indicator_requested")
-                        .ok_or(ErrorCode::DeserializationFailed("warning_indicator_requested".to_string()))?,
+                    map.get("warning_indicator_requested").ok_or(
+                        ErrorCode::DeserializationFailed("warning_indicator_requested".to_string()),
+                    )?,
                 )?,
                 env_data,
                 // Aging counters — propagate deserialization errors
@@ -224,11 +266,51 @@ impl KvsDeserialize for SovdFaultState {
     }
 }
 
+/// Trait abstracting persistent storage of SOVD fault state.
+///
+/// # Errors
+///
+/// All methods return [`StorageError`] on serialization, deserialization,
+/// backend, or not-found failures.
 pub trait SovdFaultStateStorage: Send + Sync {
-    fn put(&self, path: &str, fault_id: &fault::FaultId, state: SovdFaultState) -> Result<(), StorageError>;
+    /// Store (upsert) fault state for the given path and fault ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the write fails.
+    fn put(
+        &self,
+        path: &str,
+        fault_id: &fault::FaultId,
+        state: SovdFaultState,
+    ) -> Result<(), StorageError>;
+    /// Retrieve all fault states for a given entity path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the read fails.
     fn get_all(&self, path: &str) -> Result<Vec<(fault::FaultId, SovdFaultState)>, StorageError>;
-    fn get(&self, path: &str, fault_id: &fault::FaultId) -> Result<Option<SovdFaultState>, StorageError>;
+    /// Retrieve a single fault state by path and fault ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the read fails.
+    fn get(
+        &self,
+        path: &str,
+        fault_id: &fault::FaultId,
+    ) -> Result<Option<SovdFaultState>, StorageError>;
+    /// Delete all fault states for a given entity path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the delete fails.
     fn delete_all(&self, path: &str) -> Result<(), StorageError>;
+    /// Delete a single fault state by path and fault ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the delete fails.
     fn delete(&self, path: &str, fault_id: &fault::FaultId) -> Result<(), StorageError>;
 }
 
@@ -239,6 +321,10 @@ pub struct KvsSovdFaultStateStorage {
 impl KvsSovdFaultStateStorage {
     /// Create a new KVS-backed storage at the given path.
     ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Init`] if the KVS backend cannot be created.
+    ///
     /// # Instance pool
     ///
     /// KVS uses a process-global instance pool with a hard limit of
@@ -248,49 +334,78 @@ impl KvsSovdFaultStateStorage {
     /// `InstanceParametersMismatch` errors.
     pub fn new(dir: &Path, instance: usize) -> Result<Self, StorageError> {
         let builder = KvsBuilder::new(InstanceId(instance))
-            .backend(Box::new(JsonBackendBuilder::new().working_dir(dir.to_path_buf()).build()))
+            .backend(Box::new(
+                JsonBackendBuilder::new()
+                    .working_dir(dir.to_path_buf())
+                    .build(),
+            ))
             .kvs_load(KvsLoad::Optional);
-        let kvs = builder.build().map_err(|e| StorageError::Init(format!("{e:?}")))?;
+        let kvs = builder
+            .build()
+            .map_err(|e| StorageError::Init(format!("{e:?}")))?;
 
-        Ok(Self { kvs: Mutex::new(kvs) })
+        Ok(Self {
+            kvs: Mutex::new(kvs),
+        })
     }
 }
 
 impl SovdFaultStateStorage for KvsSovdFaultStateStorage {
-    fn put(&self, path: &str, fault_id: &fault::FaultId, state: SovdFaultState) -> Result<(), StorageError> {
-        let kvs = self.kvs.lock().map_err(|e| StorageError::Backend(format!("lock poisoned: {e}")))?;
+    fn put(
+        &self,
+        path: &str,
+        fault_id: &fault::FaultId,
+        state: SovdFaultState,
+    ) -> Result<(), StorageError> {
+        let kvs = self
+            .kvs
+            .lock()
+            .map_err(|e| StorageError::Backend(format!("lock poisoned: {e}")))?;
         let mut states = kvs.get_value_as::<KvsMap>(path).unwrap_or_default();
         states.insert(
             fault_id_to_key(fault_id),
-            state.to_kvs().map_err(|e| StorageError::Serialization(format!("{e:?}")))?,
+            state
+                .to_kvs()
+                .map_err(|e| StorageError::Serialization(format!("{e:?}")))?,
         );
-        kvs.set_value(path, states).map_err(|e| StorageError::Backend(format!("{e:?}")))?;
+        kvs.set_value(path, states)
+            .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
         Ok(())
     }
 
     fn get_all(&self, path: &str) -> Result<Vec<(fault::FaultId, SovdFaultState)>, StorageError> {
-        let kvs = self.kvs.lock().map_err(|e| StorageError::Backend(format!("lock poisoned: {e}")))?;
-        let states = match kvs.get_value_as::<KvsMap>(path) {
-            Ok(s) => s,
-            Err(_) => return Ok(Vec::new()),
+        let kvs = self
+            .kvs
+            .lock()
+            .map_err(|e| StorageError::Backend(format!("lock poisoned: {e}")))?;
+        let Ok(states) = kvs.get_value_as::<KvsMap>(path) else {
+            return Ok(Vec::new());
         };
         let mut result = Vec::new();
         for (fault_id_key, state) in &states {
-            let fault_state = SovdFaultState::from_kvs(state).map_err(|e| StorageError::Deserialization(format!("{e:?}")))?;
+            let fault_state = SovdFaultState::from_kvs(state)
+                .map_err(|e| StorageError::Deserialization(format!("{e:?}")))?;
             result.push((fault_id_from_key(fault_id_key)?, fault_state));
         }
         Ok(result)
     }
 
-    fn get(&self, path: &str, fault_id: &fault::FaultId) -> Result<Option<SovdFaultState>, StorageError> {
-        let kvs = self.kvs.lock().map_err(|e| StorageError::Backend(format!("lock poisoned: {e}")))?;
-        let states = match kvs.get_value_as::<KvsMap>(path) {
-            Ok(s) => s,
-            Err(_) => return Ok(None),
+    fn get(
+        &self,
+        path: &str,
+        fault_id: &fault::FaultId,
+    ) -> Result<Option<SovdFaultState>, StorageError> {
+        let kvs = self
+            .kvs
+            .lock()
+            .map_err(|e| StorageError::Backend(format!("lock poisoned: {e}")))?;
+        let Ok(states) = kvs.get_value_as::<KvsMap>(path) else {
+            return Ok(None);
         };
         match states.get(&fault_id_to_key(fault_id)) {
             Some(state) => {
-                let fault_state = SovdFaultState::from_kvs(state).map_err(|e| StorageError::Deserialization(format!("{e:?}")))?;
+                let fault_state = SovdFaultState::from_kvs(state)
+                    .map_err(|e| StorageError::Deserialization(format!("{e:?}")))?;
                 Ok(Some(fault_state))
             }
             None => Ok(None),
@@ -298,17 +413,27 @@ impl SovdFaultStateStorage for KvsSovdFaultStateStorage {
     }
 
     fn delete_all(&self, path: &str) -> Result<(), StorageError> {
-        let kvs = self.kvs.lock().map_err(|e| StorageError::Backend(format!("lock poisoned: {e}")))?;
-        kvs.remove_key(path).map_err(|e| StorageError::Backend(format!("{e:?}")))?;
+        let kvs = self
+            .kvs
+            .lock()
+            .map_err(|e| StorageError::Backend(format!("lock poisoned: {e}")))?;
+        kvs.remove_key(path)
+            .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
         Ok(())
     }
 
     fn delete(&self, path: &str, fault_id: &fault::FaultId) -> Result<(), StorageError> {
-        let kvs = self.kvs.lock().map_err(|e| StorageError::Backend(format!("lock poisoned: {e}")))?;
-        let mut states = kvs.get_value_as::<KvsMap>(path).map_err(|e| StorageError::Backend(format!("{e:?}")))?;
+        let kvs = self
+            .kvs
+            .lock()
+            .map_err(|e| StorageError::Backend(format!("lock poisoned: {e}")))?;
+        let mut states = kvs
+            .get_value_as::<KvsMap>(path)
+            .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
         let key = fault_id_to_key(fault_id);
         if states.remove(&key).is_some() {
-            kvs.set_value(path, states).map_err(|e| StorageError::Backend(format!("{e:?}")))?;
+            kvs.set_value(path, states)
+                .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
             Ok(())
         } else {
             Err(StorageError::NotFound)
@@ -316,7 +441,7 @@ impl SovdFaultStateStorage for KvsSovdFaultStateStorage {
     }
 }
 
-/// Encode a FaultId as a typed storage key.
+/// Encode a `FaultId` as a typed storage key.
 ///
 /// Format: `n:<decimal>` for Numeric, `t:<text>` for Text, `u:<hex32>` for Uuid.
 /// This preserves variant type information for lossless roundtrips.
@@ -325,13 +450,17 @@ fn fault_id_to_key(fault_id: &fault::FaultId) -> String {
         fault::FaultId::Numeric(x) => format!("n:{x}"),
         fault::FaultId::Text(t) => format!("t:{t}"),
         fault::FaultId::Uuid(u) => {
-            let hex: String = u.iter().map(|b| format!("{b:02x}")).collect();
+            use core::fmt::Write;
+            let hex = u.iter().fold(String::with_capacity(32), |mut acc, b| {
+                let _ = write!(acc, "{b:02x}");
+                acc
+            });
             format!("u:{hex}")
         }
     }
 }
 
-/// Decode a storage key back to a FaultId.
+/// Decode a storage key back to a `FaultId`.
 ///
 /// Supports typed prefix format (`n:`, `t:`, `u:`) for new entries.
 /// Unrecognized keys (from older storage) are treated as `FaultId::Text`
@@ -352,22 +481,24 @@ fn fault_id_from_key(key: &str) -> Result<fault::FaultId, StorageError> {
         }
         let mut bytes = [0u8; 16];
         for (i, byte) in bytes.iter_mut().enumerate() {
-            *byte =
-                u8::from_str_radix(&hex_str[i * 2..i * 2 + 2], 16).map_err(|_| StorageError::Deserialization(format!("invalid uuid hex: {key}")))?;
+            *byte = u8::from_str_radix(&hex_str[i * 2..i * 2 + 2], 16)
+                .map_err(|_| StorageError::Deserialization(format!("invalid uuid hex: {key}")))?;
         }
         return Ok(fault::FaultId::Uuid(bytes));
     }
     if let Some(text) = key.strip_prefix("t:") {
-        let short = ShortString::try_from(text).map_err(|_| StorageError::Deserialization(format!("fault id key too long: {key}")))?;
+        let short = ShortString::try_from(text)
+            .map_err(|_| StorageError::Deserialization(format!("fault id key too long: {key}")))?;
         return Ok(fault::FaultId::Text(short));
     }
     // Backward compatibility: untyped keys from older storage are treated as Text.
-    let short = ShortString::try_from(key).map_err(|_| StorageError::Deserialization(format!("fault id key too long: {key}")))?;
+    let short = ShortString::try_from(key)
+        .map_err(|_| StorageError::Deserialization(format!("fault id key too long: {key}")))?;
     Ok(fault::FaultId::Text(short))
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::unreadable_literal)]
 mod tests {
     use super::*;
 
@@ -433,7 +564,10 @@ mod tests {
     fn fault_id_key_backward_compat_untyped() {
         // Old-format keys without a type prefix are treated as Text.
         let parsed = fault_id_from_key("old_fault_key").unwrap();
-        assert_eq!(parsed, fault::FaultId::Text(ShortString::try_from("old_fault_key").unwrap()));
+        assert_eq!(
+            parsed,
+            fault::FaultId::Text(ShortString::try_from("old_fault_key").unwrap())
+        );
     }
 
     #[test]
@@ -453,13 +587,28 @@ mod tests {
         // Simulate old KVS data without aging counters
         let mut map = KvsMap::new();
         map.insert("test_failed".to_string(), true.to_kvs().unwrap());
-        map.insert("test_failed_this_operation_cycle".to_string(), false.to_kvs().unwrap());
-        map.insert("test_failed_since_last_clear".to_string(), false.to_kvs().unwrap());
-        map.insert("test_not_completed_this_operation_cycle".to_string(), false.to_kvs().unwrap());
-        map.insert("test_not_completed_since_last_clear".to_string(), false.to_kvs().unwrap());
+        map.insert(
+            "test_failed_this_operation_cycle".to_string(),
+            false.to_kvs().unwrap(),
+        );
+        map.insert(
+            "test_failed_since_last_clear".to_string(),
+            false.to_kvs().unwrap(),
+        );
+        map.insert(
+            "test_not_completed_this_operation_cycle".to_string(),
+            false.to_kvs().unwrap(),
+        );
+        map.insert(
+            "test_not_completed_since_last_clear".to_string(),
+            false.to_kvs().unwrap(),
+        );
         map.insert("pending_dtc".to_string(), false.to_kvs().unwrap());
         map.insert("confirmed_dtc".to_string(), true.to_kvs().unwrap());
-        map.insert("warning_indicator_requested".to_string(), false.to_kvs().unwrap());
+        map.insert(
+            "warning_indicator_requested".to_string(),
+            false.to_kvs().unwrap(),
+        );
         map.insert("env_data".to_string(), KvsMap::new().to_kvs().unwrap());
 
         let kvs_value = map.to_kvs().unwrap();
@@ -479,7 +628,7 @@ mod tests {
 
 #[cfg(test)]
 mod storage_tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::doc_markdown)]
 
     use crate::dfm_test_utils::InMemoryStorage;
     use crate::sovd_fault_storage::{SovdFaultState, SovdFaultStateStorage};
@@ -496,7 +645,9 @@ mod storage_tests {
             ..Default::default()
         };
 
-        storage.put("entity/1", &FaultId::Numeric(42), state).unwrap();
+        storage
+            .put("entity/1", &FaultId::Numeric(42), state)
+            .unwrap();
 
         let retrieved = storage.get("entity/1", &FaultId::Numeric(42)).unwrap();
         assert!(retrieved.is_some());
@@ -509,10 +660,15 @@ mod storage_tests {
     #[test]
     fn storage_get_nonexistent() {
         let storage = InMemoryStorage::new();
-        assert!(storage.get("entity/1", &FaultId::Numeric(42)).unwrap().is_none());
+        assert!(
+            storage
+                .get("entity/1", &FaultId::Numeric(42))
+                .unwrap()
+                .is_none()
+        );
     }
 
-    /// Storage get_all returns all faults for a path.
+    /// Storage `get_all` returns all faults for a path.
     #[test]
     fn storage_get_all() {
         let storage = InMemoryStorage::new();
@@ -547,8 +703,12 @@ mod storage_tests {
     fn storage_path_isolation() {
         let storage = InMemoryStorage::new();
 
-        storage.put("entity/1", &FaultId::Numeric(1), SovdFaultState::default()).unwrap();
-        storage.put("entity/2", &FaultId::Numeric(2), SovdFaultState::default()).unwrap();
+        storage
+            .put("entity/1", &FaultId::Numeric(1), SovdFaultState::default())
+            .unwrap();
+        storage
+            .put("entity/2", &FaultId::Numeric(2), SovdFaultState::default())
+            .unwrap();
 
         let e1 = storage.get_all("entity/1").unwrap();
         let e2 = storage.get_all("entity/2").unwrap();
@@ -558,13 +718,17 @@ mod storage_tests {
         assert!(storage.get_all("entity/3").unwrap().is_empty());
     }
 
-    /// Storage delete_all removes all faults for a path.
+    /// Storage `delete_all` removes all faults for a path.
     #[test]
     fn storage_delete_all() {
         let storage = InMemoryStorage::new();
 
-        storage.put("entity/1", &FaultId::Numeric(1), SovdFaultState::default()).unwrap();
-        storage.put("entity/1", &FaultId::Numeric(2), SovdFaultState::default()).unwrap();
+        storage
+            .put("entity/1", &FaultId::Numeric(1), SovdFaultState::default())
+            .unwrap();
+        storage
+            .put("entity/1", &FaultId::Numeric(2), SovdFaultState::default())
+            .unwrap();
 
         storage.delete_all("entity/1").unwrap();
         assert!(storage.get_all("entity/1").unwrap().is_empty());
@@ -575,11 +739,25 @@ mod storage_tests {
     fn storage_delete_single() {
         let storage = InMemoryStorage::new();
 
-        storage.put("entity/1", &FaultId::Numeric(1), SovdFaultState::default()).unwrap();
-        storage.put("entity/1", &FaultId::Numeric(2), SovdFaultState::default()).unwrap();
+        storage
+            .put("entity/1", &FaultId::Numeric(1), SovdFaultState::default())
+            .unwrap();
+        storage
+            .put("entity/1", &FaultId::Numeric(2), SovdFaultState::default())
+            .unwrap();
 
         storage.delete("entity/1", &FaultId::Numeric(1)).unwrap();
-        assert!(storage.get("entity/1", &FaultId::Numeric(1)).unwrap().is_none());
-        assert!(storage.get("entity/1", &FaultId::Numeric(2)).unwrap().is_some());
+        assert!(
+            storage
+                .get("entity/1", &FaultId::Numeric(1))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            storage
+                .get("entity/1", &FaultId::Numeric(2))
+                .unwrap()
+                .is_some()
+        );
     }
 }

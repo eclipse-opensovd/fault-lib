@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 //! Basic report → process → query flow.
 //!
 //! Demonstrates the primary use case: a reporter detects a fault condition,
@@ -44,14 +44,28 @@ fn report_single_fault_and_query_via_sovd() {
     assert_eq!(faults.len(), 2, "HVAC catalog has 2 registered faults");
 
     // Find the fault we reported.
-    let cabin_temp = faults.iter().find(|f| f.code == "0x7001").expect("fault 0x7001 should exist");
+    let cabin_temp = faults
+        .iter()
+        .find(|f| f.code == "0x7001")
+        .expect("fault 0x7001 should exist");
 
     assert_eq!(cabin_temp.fault_name, "CabinTempSensorStuck");
     assert_eq!(cabin_temp.severity, FaultSeverity::Error as u32);
 
-    let status = cabin_temp.typed_status.as_ref().expect("typed_status should be populated");
-    assert_eq!(status.test_failed, Some(true), "Failed stage sets test_failed");
-    assert_eq!(status.confirmed_dtc, Some(true), "Failed stage sets confirmed_dtc");
+    let status = cabin_temp
+        .typed_status
+        .as_ref()
+        .expect("typed_status should be populated");
+    assert_eq!(
+        status.test_failed,
+        Some(true),
+        "Failed stage sets test_failed"
+    );
+    assert_eq!(
+        status.confirmed_dtc,
+        Some(true),
+        "Failed stage sets confirmed_dtc"
+    );
 }
 
 /// **Scenario**: Reporter reports a fault with environment data, SOVD returns it.
@@ -74,10 +88,16 @@ fn report_fault_with_env_data_and_query() {
     harness.processor.process_record(&path, &record);
 
     // Query individual fault with env_data.
-    let (fault, env_data) = harness.manager.get_fault("hvac", "hvac.blower.speed_sensor_mismatch").unwrap();
+    let (fault, env_data) = harness
+        .manager
+        .get_fault("hvac", "hvac.blower.speed_sensor_mismatch")
+        .unwrap();
 
     assert_eq!(fault.fault_name, "BlowerSpeedMismatch");
-    assert_eq!(fault.symptom.as_deref(), Some("Blower motor speed does not match commanded value"));
+    assert_eq!(
+        fault.symptom.as_deref(),
+        Some("Blower motor speed does not match commanded value")
+    );
 
     // Verify env_data round-trips through the pipeline.
     assert_eq!(env_data.get("cabin_temp_c"), Some(&"42".to_string()));
@@ -111,9 +131,24 @@ fn unreported_faults_have_default_status() {
     assert_eq!(faults.len(), 2, "Both HVAC faults should be listed");
 
     for fault in &faults {
-        let status = fault.typed_status.as_ref().expect("typed_status should exist");
-        assert_eq!(status.test_failed, Some(false), "Default: test_failed=false");
-        assert_eq!(status.confirmed_dtc, Some(false), "Default: confirmed_dtc=false");
-        assert_eq!(status.pending_dtc, Some(false), "Default: pending_dtc=false");
+        let status = fault
+            .typed_status
+            .as_ref()
+            .expect("typed_status should exist");
+        assert_eq!(
+            status.test_failed,
+            Some(false),
+            "Default: test_failed=false"
+        );
+        assert_eq!(
+            status.confirmed_dtc,
+            Some(false),
+            "Default: confirmed_dtc=false"
+        );
+        assert_eq!(
+            status.pending_dtc,
+            Some(false),
+            "Default: pending_dtc=false"
+        );
     }
 }

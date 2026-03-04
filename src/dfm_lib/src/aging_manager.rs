@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! Evaluates fault aging policies and determines when faults should be reset.
 //!
@@ -37,7 +37,7 @@ use std::time::Instant;
 /// total count survives restarts - only the in-progress window is reset.
 #[derive(Debug, Clone)]
 pub struct AgingState {
-    /// Cycle count at which fault last occurred, keyed by cycle_ref.
+    /// Cycle count at which fault last occurred, keyed by `cycle_ref`.
     pub last_active_cycle: HashMap<String, u64>,
     /// Timestamp of last active (Failed/PreFailed) state.
     pub last_active_time: Instant,
@@ -49,6 +49,7 @@ pub struct AgingState {
 
 impl AgingState {
     /// Create a new aging state for a fault that just became active.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             last_active_cycle: HashMap::new(),
@@ -59,7 +60,7 @@ impl AgingState {
     }
 
     /// Mark fault as active (resets aging progress).
-    /// Call when fault transitions to Failed or PreFailed.
+    /// Call when fault transitions to Failed or `PreFailed`.
     pub fn mark_active(&mut self, cycle_tracker: &OperationCycleTracker) {
         self.last_active_time = Instant::now();
         self.is_healed = false;
@@ -106,7 +107,10 @@ impl AgingManager {
         // cycles before a fault may be cleared. Gate the trigger evaluation
         // behind this threshold when configured.
         if let Some(min_cycles) = policy.min_operating_cycles_before_clear {
-            let tracker = self.cycle_tracker.read().unwrap_or_else(|e| e.into_inner());
+            let tracker = self
+                .cycle_tracker
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let current_power = tracker.get("power");
             let fault_power = state.last_active_cycle.get("power").copied().unwrap_or(0);
             if current_power.saturating_sub(fault_power) < u64::from(min_cycles) {
@@ -123,21 +127,32 @@ impl AgingManager {
                 // PowerCycles uses the "power" counter for backward compatibility.
                 // Recover from RwLock poisoning — data integrity is more important
                 // than propagating a panic from an unrelated thread.
-                let tracker = self.cycle_tracker.read().unwrap_or_else(|e| e.into_inner());
+                let tracker = self
+                    .cycle_tracker
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 let current = tracker.get("power");
                 let fault_cycle = state.last_active_cycle.get("power").copied().unwrap_or(0);
                 current.saturating_sub(fault_cycle) >= u64::from(*min_cycles)
             }
 
-            ResetTrigger::OperationCycles { min_cycles, cycle_ref } => {
-                let tracker = self.cycle_tracker.read().unwrap_or_else(|e| e.into_inner());
+            ResetTrigger::OperationCycles {
+                min_cycles,
+                cycle_ref,
+            } => {
+                let tracker = self
+                    .cycle_tracker
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 let ref_str = cycle_ref.to_string();
                 let current = tracker.get(&ref_str);
                 let fault_cycle = state.last_active_cycle.get(&ref_str).copied().unwrap_or(0);
                 current.saturating_sub(fault_cycle) >= u64::from(*min_cycles)
             }
 
-            ResetTrigger::StableFor(duration) => Instant::now().duration_since(state.last_active_time) >= (*duration).into(),
+            ResetTrigger::StableFor(duration) => {
+                Instant::now().duration_since(state.last_active_time) >= (*duration).into()
+            }
 
             ResetTrigger::ToolOnly => false, // Never auto-reset
         }
@@ -183,7 +198,7 @@ mod tests {
     #[test]
     fn power_cycles_trigger_not_met() {
         let tracker = make_tracker();
-        let manager = AgingManager::new(tracker.clone());
+        let manager = AgingManager::new(Arc::clone(&tracker));
 
         let policy = ResetPolicy {
             trigger: ResetTrigger::PowerCycles(3),
@@ -203,7 +218,7 @@ mod tests {
     #[test]
     fn power_cycles_trigger_met() {
         let tracker = make_tracker();
-        let manager = AgingManager::new(tracker.clone());
+        let manager = AgingManager::new(Arc::clone(&tracker));
 
         let policy = ResetPolicy {
             trigger: ResetTrigger::PowerCycles(3),
@@ -224,7 +239,7 @@ mod tests {
     #[test]
     fn operation_cycles_named_counter() {
         let tracker = make_tracker();
-        let manager = AgingManager::new(tracker.clone());
+        let manager = AgingManager::new(Arc::clone(&tracker));
 
         let policy = ResetPolicy {
             trigger: ResetTrigger::OperationCycles {
@@ -265,14 +280,16 @@ mod tests {
         assert!(!manager.should_reset(&policy, &state));
 
         // Backdate the last_active_time
-        state.last_active_time = Instant::now() - Duration::from_millis(50);
+        state.last_active_time = Instant::now()
+            .checked_sub(Duration::from_millis(50))
+            .unwrap();
         assert!(manager.should_reset(&policy, &state));
     }
 
     #[test]
     fn tool_only_never_auto_resets() {
         let tracker = make_tracker();
-        let manager = AgingManager::new(tracker.clone());
+        let manager = AgingManager::new(Arc::clone(&tracker));
 
         let policy = ResetPolicy {
             trigger: ResetTrigger::ToolOnly,
@@ -333,15 +350,21 @@ mod tests {
             sovd_state.test_failed = true;
             sovd_state.confirmed_dtc = true;
             manager.apply_reset(&mut aging_state, &mut sovd_state);
-            assert_eq!(sovd_state.aging_counter, expected, "after {expected} resets");
-            assert_eq!(sovd_state.healing_counter, expected, "healing_counter after {expected} resets");
+            assert_eq!(
+                sovd_state.aging_counter, expected,
+                "after {expected} resets"
+            );
+            assert_eq!(
+                sovd_state.healing_counter, expected,
+                "healing_counter after {expected} resets"
+            );
         }
     }
 
     #[test]
     fn already_healed_not_rechecked() {
         let tracker = make_tracker();
-        let manager = AgingManager::new(tracker.clone());
+        let manager = AgingManager::new(Arc::clone(&tracker));
 
         let policy = ResetPolicy {
             trigger: ResetTrigger::PowerCycles(1),
@@ -382,7 +405,7 @@ mod aging_tests {
     // PowerCycles aging
     // ============================================================================
 
-    /// E2E: fault Failed → Passed → power cycles → aging reset clears confirmed_dtc.
+    /// E2E: fault Failed → Passed → power cycles → aging reset clears `confirmed_dtc`.
     #[test]
     fn aging_power_cycles_clears_confirmed_dtc() {
         let fault_id = FaultId::Numeric(500);
@@ -393,7 +416,8 @@ mod aging_tests {
         let registry = make_aging_registry("test_entity", fault_id.clone(), policy);
         let storage = Arc::new(InMemoryStorage::new());
         let tracker = make_cycle_tracker();
-        let mut processor = FaultRecordProcessor::new(storage.clone(), registry, tracker.clone());
+        let mut processor =
+            FaultRecordProcessor::new(Arc::clone(&storage), registry, Arc::clone(&tracker));
         let path = make_path("test_entity");
 
         // Step 1: Fault occurs
@@ -409,7 +433,10 @@ mod aging_tests {
         processor.process_record(&path, &passed);
 
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(state.confirmed_dtc, "confirmed_dtc should stay latched after Passed (aging policy)");
+        assert!(
+            state.confirmed_dtc,
+            "confirmed_dtc should stay latched after Passed (aging policy)"
+        );
         assert!(!state.test_failed, "test_failed should clear on Passed");
 
         // Step 3: Advance power cycles but not enough (only 2 of 3 needed)
@@ -419,16 +446,28 @@ mod aging_tests {
         // Send another Passed event to trigger re-evaluation
         processor.process_record(&path, &passed);
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(state.confirmed_dtc, "confirmed_dtc should still be latched (only 2/3 power cycles)");
+        assert!(
+            state.confirmed_dtc,
+            "confirmed_dtc should still be latched (only 2/3 power cycles)"
+        );
 
         // Step 4: Third power cycle → aging conditions met
         tracker.write().unwrap().increment("power");
         processor.process_record(&path, &passed);
 
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(!state.confirmed_dtc, "confirmed_dtc should clear after 3 power cycles (aging reset)");
-        assert!(!state.test_failed, "test_failed should remain cleared after aging reset");
-        assert_eq!(state.healing_counter, 1, "healing_counter should increment on aging reset");
+        assert!(
+            !state.confirmed_dtc,
+            "confirmed_dtc should clear after 3 power cycles (aging reset)"
+        );
+        assert!(
+            !state.test_failed,
+            "test_failed should remain cleared after aging reset"
+        );
+        assert_eq!(
+            state.healing_counter, 1,
+            "healing_counter should increment on aging reset"
+        );
     }
 
     // ============================================================================
@@ -449,7 +488,8 @@ mod aging_tests {
         let registry = make_aging_registry("test_entity", fault_id.clone(), policy);
         let storage = Arc::new(InMemoryStorage::new());
         let tracker = make_cycle_tracker();
-        let mut processor = FaultRecordProcessor::new(storage.clone(), registry, tracker.clone());
+        let mut processor =
+            FaultRecordProcessor::new(Arc::clone(&storage), registry, Arc::clone(&tracker));
         let path = make_path("test_entity");
 
         // Fault occurs and then passes
@@ -466,7 +506,10 @@ mod aging_tests {
         tracker.write().unwrap().increment("power");
         processor.process_record(&path, &passed);
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(state.confirmed_dtc, "power cycles should not trigger ignition-based aging");
+        assert!(
+            state.confirmed_dtc,
+            "power cycles should not trigger ignition-based aging"
+        );
 
         // Increment ignition counter: 1 of 2
         tracker.write().unwrap().increment("ignition");
@@ -478,7 +521,10 @@ mod aging_tests {
         tracker.write().unwrap().increment("ignition");
         processor.process_record(&path, &passed);
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(!state.confirmed_dtc, "2/2 ignition cycles should trigger aging reset");
+        assert!(
+            !state.confirmed_dtc,
+            "2/2 ignition cycles should trigger aging reset"
+        );
         assert_eq!(state.healing_counter, 1);
     }
 
@@ -498,7 +544,7 @@ mod aging_tests {
         let registry = make_aging_registry("test_entity", fault_id.clone(), policy);
         let storage = Arc::new(InMemoryStorage::new());
         let tracker = make_cycle_tracker();
-        let mut processor = FaultRecordProcessor::new(storage.clone(), registry, tracker);
+        let mut processor = FaultRecordProcessor::new(Arc::clone(&storage), registry, tracker);
         let path = make_path("test_entity");
 
         // Fault occurs and passes
@@ -508,7 +554,10 @@ mod aging_tests {
         processor.process_record(&path, &passed);
 
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(state.confirmed_dtc, "confirmed_dtc should be latched immediately after Passed");
+        assert!(
+            state.confirmed_dtc,
+            "confirmed_dtc should be latched immediately after Passed"
+        );
 
         // Wait for the stability duration to elapse
         std::thread::sleep(Duration::from_millis(30));
@@ -516,7 +565,10 @@ mod aging_tests {
         // Re-process a Passed event — aging evaluation should now trigger
         processor.process_record(&path, &passed);
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(!state.confirmed_dtc, "confirmed_dtc should clear after stability period elapsed");
+        assert!(
+            !state.confirmed_dtc,
+            "confirmed_dtc should clear after stability period elapsed"
+        );
         assert_eq!(state.healing_counter, 1);
     }
 
@@ -524,7 +576,7 @@ mod aging_tests {
     // ToolOnly — never auto-resets
     // ============================================================================
 
-    /// E2E: fault with ToolOnly policy never auto-resets.
+    /// E2E: fault with `ToolOnly` policy never auto-resets.
     #[test]
     fn aging_tool_only_never_auto_resets() {
         let fault_id = FaultId::Numeric(503);
@@ -535,7 +587,8 @@ mod aging_tests {
         let registry = make_aging_registry("test_entity", fault_id.clone(), policy);
         let storage = Arc::new(InMemoryStorage::new());
         let tracker = make_cycle_tracker();
-        let mut processor = FaultRecordProcessor::new(storage.clone(), registry, tracker.clone());
+        let mut processor =
+            FaultRecordProcessor::new(Arc::clone(&storage), registry, Arc::clone(&tracker));
         let path = make_path("test_entity");
 
         let failed = make_record(fault_id.clone(), LifecycleStage::Failed);
@@ -550,7 +603,10 @@ mod aging_tests {
         processor.process_record(&path, &passed);
 
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(state.confirmed_dtc, "ToolOnly should never auto-reset — confirmed_dtc stays latched");
+        assert!(
+            state.confirmed_dtc,
+            "ToolOnly should never auto-reset — confirmed_dtc stays latched"
+        );
         assert_eq!(state.healing_counter, 0);
     }
 
@@ -558,25 +614,34 @@ mod aging_tests {
     // No aging policy — immediate clear on Passed
     // ============================================================================
 
-    /// Without aging policy, confirmed_dtc clears immediately on Passed.
+    /// Without aging policy, `confirmed_dtc` clears immediately on Passed.
     #[test]
     fn no_aging_policy_clears_immediately() {
         let storage = Arc::new(InMemoryStorage::new());
         let registry = make_registry(); // No aging configured
         let tracker = make_cycle_tracker();
-        let mut processor = FaultRecordProcessor::new(storage.clone(), registry, tracker);
+        let mut processor = FaultRecordProcessor::new(Arc::clone(&storage), registry, tracker);
         let path = make_path("test_entity");
 
         let failed = make_record(FaultId::Numeric(42), LifecycleStage::Failed);
         let passed = make_record(FaultId::Numeric(42), LifecycleStage::Passed);
         processor.process_record(&path, &failed);
 
-        let state = storage.get("test_entity", &FaultId::Numeric(42)).unwrap().unwrap();
+        let state = storage
+            .get("test_entity", &FaultId::Numeric(42))
+            .unwrap()
+            .unwrap();
         assert!(state.confirmed_dtc);
 
         processor.process_record(&path, &passed);
-        let state = storage.get("test_entity", &FaultId::Numeric(42)).unwrap().unwrap();
-        assert!(!state.confirmed_dtc, "Without aging, confirmed_dtc should clear immediately on Passed");
+        let state = storage
+            .get("test_entity", &FaultId::Numeric(42))
+            .unwrap()
+            .unwrap();
+        assert!(
+            !state.confirmed_dtc,
+            "Without aging, confirmed_dtc should clear immediately on Passed"
+        );
     }
 
     // ============================================================================
@@ -594,7 +659,8 @@ mod aging_tests {
         let registry = make_aging_registry("test_entity", fault_id.clone(), policy);
         let storage = Arc::new(InMemoryStorage::new());
         let tracker = make_cycle_tracker();
-        let mut processor = FaultRecordProcessor::new(storage.clone(), registry, tracker.clone());
+        let mut processor =
+            FaultRecordProcessor::new(Arc::clone(&storage), registry, Arc::clone(&tracker));
         let path = make_path("test_entity");
 
         let failed = make_record(fault_id.clone(), LifecycleStage::Failed);
@@ -610,13 +676,19 @@ mod aging_tests {
         }
         processor.process_record(&path, &passed);
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(state.confirmed_dtc, "Only 3/5 cycles — should not have aged out yet");
+        assert!(
+            state.confirmed_dtc,
+            "Only 3/5 cycles — should not have aged out yet"
+        );
 
         // Fault re-occurs! Aging resets
         processor.process_record(&path, &failed);
 
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(state.confirmed_dtc, "Re-failure keeps confirmed_dtc latched");
+        assert!(
+            state.confirmed_dtc,
+            "Re-failure keeps confirmed_dtc latched"
+        );
 
         // Now pass again — aging counter should restart from THIS failure
         processor.process_record(&path, &passed);
@@ -628,12 +700,18 @@ mod aging_tests {
         }
         processor.process_record(&path, &passed);
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(state.confirmed_dtc, "Only 4/5 cycles since re-failure — should not have aged out");
+        assert!(
+            state.confirmed_dtc,
+            "Only 4/5 cycles since re-failure — should not have aged out"
+        );
 
         tracker.write().unwrap().increment("power");
         processor.process_record(&path, &passed);
         let state = storage.get("test_entity", &fault_id).unwrap().unwrap();
-        assert!(!state.confirmed_dtc, "5/5 cycles since re-failure — aging should complete now");
+        assert!(
+            !state.confirmed_dtc,
+            "5/5 cycles since re-failure — aging should complete now"
+        );
         assert_eq!(state.healing_counter, 1);
     }
 
@@ -641,7 +719,7 @@ mod aging_tests {
     // Regression: existing status bits preserved
     // ============================================================================
 
-    /// Aging reset preserves warning_indicator_requested=false and doesn't
+    /// Aging reset preserves `warning_indicator_requested=false` and doesn't
     /// corrupt other status bits.
     #[test]
     fn aging_reset_preserves_status_consistency() {
@@ -653,7 +731,8 @@ mod aging_tests {
         let registry = make_aging_registry("test_entity", fault_id.clone(), policy);
         let storage = Arc::new(InMemoryStorage::new());
         let tracker = make_cycle_tracker();
-        let mut processor = FaultRecordProcessor::new(storage.clone(), registry, tracker.clone());
+        let mut processor =
+            FaultRecordProcessor::new(Arc::clone(&storage), registry, Arc::clone(&tracker));
         let path = make_path("test_entity");
 
         let failed = make_record(fault_id.clone(), LifecycleStage::Failed);
@@ -674,7 +753,7 @@ mod aging_tests {
         assert_eq!(state.healing_counter, 1, "healing counter incremented");
     }
 
-    /// Multiple aging resets increment healing_counter each time.
+    /// Multiple aging resets increment `healing_counter` each time.
     #[test]
     fn multiple_aging_resets_increment_healing_counter() {
         let fault_id = FaultId::Numeric(506);
@@ -685,7 +764,8 @@ mod aging_tests {
         let registry = make_aging_registry("test_entity", fault_id.clone(), policy);
         let storage = Arc::new(InMemoryStorage::new());
         let tracker = make_cycle_tracker();
-        let mut processor = FaultRecordProcessor::new(storage.clone(), registry, tracker.clone());
+        let mut processor =
+            FaultRecordProcessor::new(Arc::clone(&storage), registry, Arc::clone(&tracker));
         let path = make_path("test_entity");
 
         let failed = make_record(fault_id.clone(), LifecycleStage::Failed);

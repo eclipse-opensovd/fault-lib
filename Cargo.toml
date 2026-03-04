@@ -1,8 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0
+
 [workspace]
 resolver = "2"
 
 members = [
     "src/common",
+    "src/dfm_bin",
     "src/dfm_lib",
     "src/fault_lib",
     "src/xtask",
@@ -20,22 +31,28 @@ readme = "README.md"
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
-todo = "deny"
-unimplemented = "deny"
+# shared-lints baseline (from cicd-workflows/shared-lints/shared-lints.toml)
+pedantic = { level = "warn", priority = -1 }
+similar_names = "allow"
+indexing_slicing = "deny"
 unwrap_used = "deny"
+arithmetic_side_effects = "deny"
+clone_on_ref_ptr = "warn"
+separated_literal_suffix = "deny"
+# fault-lib specific
+unimplemented = "deny"
 expect_used = "deny"
 std_instead_of_core = "deny"
 std_instead_of_alloc = "deny"
 alloc_instead_of_core = "deny"
 cast_possible_truncation = "warn"
-arithmetic_side_effects = "warn"
-new_without_default = "allow"
 
 [workspace.dependencies]
-env_logger = "0.11.8"
+clap = { version = "4.5", features = ["derive"] }
 iceoryx2 = { git = "https://github.com/eclipse-iceoryx/iceoryx2.git", rev = "eba5da4b8d8cb03bccf1394d88a05e31f58838dc" }
 iceoryx2-bb-container = { git = "https://github.com/eclipse-iceoryx/iceoryx2.git", rev = "eba5da4b8d8cb03bccf1394d88a05e31f58838dc" }
-log = "0.4.22"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 mockall = "0.13.1"
 serial_test = "3.2"
 serde = { version = "1.0", features = ["derive"] }

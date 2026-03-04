@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 //! DFM-side query request handler.
 //!
@@ -21,7 +21,9 @@ use crate::sovd_fault_manager::{Error as SovdError, SovdFaultManager};
 use crate::sovd_fault_storage::SovdFaultStateStorage;
 use common::ipc_service_name::DFM_QUERY_SERVICE_NAME;
 use common::ipc_service_type::ServiceType;
-use common::query_protocol::{DfmQueryError, DfmQueryRequest, DfmQueryResponse, MAX_FAULTS_PER_RESPONSE};
+use common::query_protocol::{
+    DfmQueryError, DfmQueryRequest, DfmQueryResponse, MAX_FAULTS_PER_RESPONSE,
+};
 use common::sink_error::SinkError;
 use common::types::ShortString;
 use iceoryx2::port::server::Server;
@@ -48,16 +50,26 @@ impl<S: SovdFaultStateStorage> DfmQueryServer<S> {
     ///
     /// Returns `SinkError::TransportDown` if the iceoryx2 service or server
     /// port cannot be created.
-    pub fn new(node: &Node<ServiceType>, sovd_manager: SovdFaultManager<S>) -> Result<Self, SinkError> {
-        let service_name = ServiceName::new(DFM_QUERY_SERVICE_NAME).map_err(|_| SinkError::TransportDown)?;
+    pub fn new(
+        node: &Node<ServiceType>,
+        sovd_manager: SovdFaultManager<S>,
+    ) -> Result<Self, SinkError> {
+        let service_name =
+            ServiceName::new(DFM_QUERY_SERVICE_NAME).map_err(|_| SinkError::TransportDown)?;
         let service = node
             .service_builder(&service_name)
             .request_response::<DfmQueryRequest, DfmQueryResponse>()
             .open_or_create()
             .map_err(|_| SinkError::TransportDown)?;
-        let server = service.server_builder().create().map_err(|_| SinkError::TransportDown)?;
+        let server = service
+            .server_builder()
+            .create()
+            .map_err(|_| SinkError::TransportDown)?;
 
-        Ok(Self { server, sovd_manager })
+        Ok(Self {
+            server,
+            sovd_manager,
+        })
     }
 
     /// Process all pending query requests (non-blocking).
@@ -78,7 +90,9 @@ impl<S: SovdFaultStateStorage> DfmQueryServer<S> {
             };
 
             let response = self.handle_request(&active_request);
-            active_request.send_copy(response).map_err(|_| SinkError::TransportDown)?;
+            active_request
+                .send_copy(response)
+                .map_err(|_| SinkError::TransportDown)?;
         }
         Ok(())
     }
@@ -106,7 +120,10 @@ impl<S: SovdFaultStateStorage> DfmQueryServer<S> {
                 let path_str = path.to_string();
                 let code_str = fault_code.to_string();
                 match self.sovd_manager.get_fault(&path_str, &code_str) {
-                    Ok((fault, env)) => DfmQueryResponse::SingleFault(sovd_fault_to_ipc(&fault), env_data_to_ipc(&env)),
+                    Ok((fault, env)) => DfmQueryResponse::SingleFault(
+                        sovd_fault_to_ipc(&fault),
+                        env_data_to_ipc(&env),
+                    ),
                     Err(e) => DfmQueryResponse::Error(sovd_error_to_ipc(e)),
                 }
             }
@@ -136,7 +153,11 @@ fn sovd_error_to_ipc(e: SovdError) -> DfmQueryError {
         SovdError::Storage(msg) => {
             let truncated = ShortString::from_str_truncated(&msg).unwrap_or_default();
             if msg.len() > truncated.len() {
-                log::warn!("IPC error message truncation: input {} bytes -> {} bytes", msg.len(), truncated.len());
+                tracing::warn!(
+                    "IPC error message truncation: input {} bytes -> {} bytes",
+                    msg.len(),
+                    truncated.len()
+                );
             }
             DfmQueryError::StorageError(truncated)
         }

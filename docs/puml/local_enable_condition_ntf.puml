@@ -1,3 +1,13 @@
+' SPDX-License-Identifier: Apache-2.0
+' SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+'
+' See the NOTICE file(s) distributed with this work for additional
+' information regarding copyright ownership.
+'
+' This program and the accompanying materials are made available under the
+' terms of the Apache License Version 2.0 which is available at
+' https://www.apache.org/licenses/LICENSE-2.0
+
 @startuml
 title Enabling Condition : local status notifications within same app
 skinparam ParticipantPadding 20
@@ -45,7 +55,7 @@ end note
 == Async DFM notification ==
 
 FaultLib ->> IpcWorker : mpsc::try_send(\nEnablingConditionStatusChange\n(entity, Active))
-IpcWorker ->> DiagFaultMgr : iceoryx2 publish\non "dfm/event"
+IpcWorker ->> DiagFaultMgr : publish on "dfm/event"\n(IPC via FaultSinkApi;\ndefault: iceoryx2)
 note right of DiagFaultMgr
     DFM is notified asynchronously so it can
     broadcast to other FaultLib instances

@@ -1,18 +1,25 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
-use crate::{FaultApi, sink::*};
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
+use crate::{
+    FaultApi,
+    sink::{FaultSinkApi, LogHook},
+};
 use alloc::sync::Arc;
 use common::debounce::Debounce;
-use common::{fault::*, sink_error::*, types::*};
+use common::{
+    fault::{FaultDescriptor, FaultId, FaultRecord, IpcTimestamp, LifecyclePhase, LifecycleStage},
+    sink_error::SinkError,
+    types::MetadataVec,
+};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 // Per-component defaults that get baked into a Reporter instance.
@@ -39,10 +46,23 @@ pub enum ReporterError {
     SinkNotAvailable(#[from] SinkError),
 }
 
+/// API trait for fault reporters.
+///
+/// # Errors
+///
+/// Methods return [`ReporterError`] or [`SinkError`] on initialization
+/// or transport failures respectively.
 pub trait ReporterApi {
+    /// Create a new reporter for the given fault ID and configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReporterError`] if the fault ID is not found in the catalog
+    /// or the catalog has not been initialized.
     fn new(id: &FaultId, config: ReporterConfig) -> Result<Self, ReporterError>
     where
         Self: Sized;
+    /// Build a fault record for the given lifecycle stage.
     fn create_record(&self, lifecycle_stage: LifecycleStage) -> FaultRecord;
 
     /// Publish a fault record to the DFM via the configured sink.
@@ -50,6 +70,11 @@ pub trait ReporterApi {
     /// `path` is the SOVD entity path (e.g. `"ecu/app_name"`). The path is
     /// converted to a 128-byte `LongString` for IPC transport; paths longer
     /// than 128 bytes are rejected with [`SinkError::BadDescriptor`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SinkError`] if the IPC transport fails or the path is too
+    /// long.
     fn publish(&mut self, path: &str, record: FaultRecord) -> Result<(), SinkError>;
 }
 
@@ -74,9 +99,15 @@ pub struct Reporter {
 impl ReporterApi for Reporter {
     fn new(id: &FaultId, config: ReporterConfig) -> Result<Self, ReporterError> {
         let sink = FaultApi::try_get_fault_sink()?;
-        let catalog = FaultApi::try_get_fault_catalog().ok_or(ReporterError::CatalogNotInitialized)?;
-        let descriptor = catalog.descriptor(id).ok_or_else(|| ReporterError::FaultIdNotFound(id.clone()))?.clone();
-        let debouncer = descriptor.reporter_side_debounce.map(|mode| mode.into_debouncer());
+        let catalog =
+            FaultApi::try_get_fault_catalog().ok_or(ReporterError::CatalogNotInitialized)?;
+        let descriptor = catalog
+            .descriptor(id)
+            .ok_or_else(|| ReporterError::FaultIdNotFound(id.clone()))?
+            .clone();
+        let debouncer = descriptor
+            .reporter_side_debounce
+            .map(common::debounce::DebounceMode::into_debouncer);
         let log_hook = FaultApi::try_get_log_hook();
         Ok(Self {
             sink,
@@ -93,7 +124,9 @@ impl ReporterApi for Reporter {
     /// The timestamp is captured at record creation time to accurately
     /// reflect when the fault condition was detected.
     fn create_record(&self, lifecycle_stage: LifecycleStage) -> FaultRecord {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
 
         FaultRecord {
             id: self.descriptor.id.clone(),
@@ -113,7 +146,7 @@ impl ReporterApi for Reporter {
 
         // Reset debouncer on lifecycle stage transitions (e.g. Passed → Failed)
         // so a new fault occurrence starts with a clean debounce window.
-        if Self::should_reset_debouncer(&self.last_stage, &record.lifecycle_stage)
+        if Self::should_reset_debouncer(self.last_stage, record.lifecycle_stage)
             && let Some(ref mut d) = self.debouncer
         {
             d.reset(now);
@@ -153,10 +186,10 @@ impl Reporter {
     /// the debounce window so that a fresh occurrence is not suppressed.
     ///
     /// Only triggers on Passed → Failed/PreFailed transitions.
-    /// NotTested → Failed is the initial detection, not a reset scenario.
-    fn should_reset_debouncer(last_stage: &LifecycleStage, new_stage: &LifecycleStage) -> bool {
-        use LifecycleStage::*;
-        matches!((last_stage, new_stage), (Passed, Failed) | (Passed, PreFailed))
+    /// `NotTested` → Failed is the initial detection, not a reset scenario.
+    fn should_reset_debouncer(last_stage: LifecycleStage, new_stage: LifecycleStage) -> bool {
+        use LifecycleStage::{Failed, Passed, PreFailed};
+        matches!((last_stage, new_stage), (Passed, Failed | PreFailed))
     }
 }
 
@@ -172,7 +205,12 @@ mod tests {
     fn create_record() {
         let reporter = Reporter {
             sink: Arc::new(MockFaultSinkApi::new()),
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("Test fault").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("Test fault").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -202,7 +240,12 @@ mod tests {
 
         let mut reporter = Reporter {
             sink: Arc::new(mock_sink),
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("Test fault").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("Test fault").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -217,11 +260,19 @@ mod tests {
     #[test]
     fn publish_fail() {
         let mut mock_sink = MockFaultSinkApi::new();
-        mock_sink.expect_publish().once().returning(|_, _| Err(SinkError::TransportDown));
+        mock_sink
+            .expect_publish()
+            .once()
+            .returning(|_, _| Err(SinkError::TransportDown));
 
         let mut reporter = Reporter {
             sink: Arc::new(mock_sink),
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("Test fault").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("Test fault").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -229,7 +280,10 @@ mod tests {
         };
 
         let record = reporter.create_record(LifecycleStage::Passed);
-        assert_eq!(reporter.publish("test/path", record), Err(SinkError::TransportDown));
+        assert_eq!(
+            reporter.publish("test/path", record),
+            Err(SinkError::TransportDown)
+        );
     }
 }
 
@@ -263,7 +317,12 @@ mod design_tests {
     fn make_reporter(sink: Arc<dyn FaultSinkApi>, fault_id: FaultId) -> Reporter {
         Reporter {
             sink,
-            descriptor: stub_descriptor(fault_id, to_static_short_string("Test fault").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                fault_id,
+                to_static_short_string("Test fault").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -271,8 +330,13 @@ mod design_tests {
         }
     }
 
-    fn make_reporter_with_descriptor(sink: Arc<dyn FaultSinkApi>, descriptor: FaultDescriptor) -> Reporter {
-        let debouncer = descriptor.reporter_side_debounce.map(|mode| mode.into_debouncer());
+    fn make_reporter_with_descriptor(
+        sink: Arc<dyn FaultSinkApi>,
+        descriptor: FaultDescriptor,
+    ) -> Reporter {
+        let debouncer = descriptor
+            .reporter_side_debounce
+            .map(common::debounce::DebounceMode::into_debouncer);
         Reporter {
             sink,
             descriptor,
@@ -305,7 +369,7 @@ mod design_tests {
         assert_sync::<Reporter>();
     }
 
-    /// REQ-1: FaultRecord must be ZeroCopySend for IPC transport.
+    /// REQ-1: `FaultRecord` must be `ZeroCopySend` for IPC transport.
     #[test]
     fn req1_fault_record_is_zero_copy_send() {
         fn assert_zero_copy<T: iceoryx2::prelude::ZeroCopySend>() {}
@@ -318,9 +382,10 @@ mod design_tests {
 
     /// REQ-2: Published records must arrive at the sink.
     #[test]
+    #[allow(clippy::indexing_slicing)]
     fn req2_sink_receives_published_records() {
         let sink = Arc::new(RecordingSink::new());
-        let mut reporter = make_reporter(sink.clone(), FaultId::Numeric(42));
+        let mut reporter = make_reporter(Arc::clone(&sink) as _, FaultId::Numeric(42));
 
         let record = reporter.create_record(LifecycleStage::Failed);
         reporter.publish("test/path", record).unwrap();
@@ -345,11 +410,16 @@ mod design_tests {
 
     /// REQ-2: Multiple records can be published sequentially.
     #[test]
+    #[allow(clippy::indexing_slicing)]
     fn req2_multiple_records_delivered_in_order() {
         let sink = Arc::new(RecordingSink::new());
-        let mut reporter = make_reporter(sink.clone(), FaultId::Numeric(100));
+        let mut reporter = make_reporter(Arc::clone(&sink) as _, FaultId::Numeric(100));
 
-        for stage in [LifecycleStage::NotTested, LifecycleStage::PreFailed, LifecycleStage::Failed] {
+        for stage in [
+            LifecycleStage::NotTested,
+            LifecycleStage::PreFailed,
+            LifecycleStage::Failed,
+        ] {
             let record = reporter.create_record(stage);
             reporter.publish("test/path", record).unwrap();
         }
@@ -365,7 +435,7 @@ mod design_tests {
     // REQ-3: Domain-specific error logic (debouncing)
     // ============================================================================
 
-    /// REQ-3: FaultDescriptor supports reporter-side debounce configuration.
+    /// REQ-3: `FaultDescriptor` supports reporter-side debounce configuration.
     #[test]
     fn req3_descriptor_supports_reporter_side_debounce() {
         let descriptor = stub_descriptor(
@@ -379,7 +449,7 @@ mod design_tests {
         assert!(descriptor.reporter_side_debounce.is_some());
     }
 
-    /// REQ-3: FaultDescriptor supports manager-side debounce configuration.
+    /// REQ-3: `FaultDescriptor` supports manager-side debounce configuration.
     #[test]
     fn req3_descriptor_supports_manager_side_debounce() {
         let descriptor = FaultDescriptor {
@@ -400,7 +470,7 @@ mod design_tests {
         assert!(descriptor.manager_side_debounce.is_some());
     }
 
-    /// REQ-3: FaultDescriptor supports reset policy configuration.
+    /// REQ-3: `FaultDescriptor` supports reset policy configuration.
     #[test]
     fn req3_descriptor_supports_reset_policy() {
         let descriptor = stub_descriptor(
@@ -416,15 +486,20 @@ mod design_tests {
     }
 
     /// REQ-3: Reporter applies debounce filtering before publishing to sink.
-    /// EdgeWithCooldown lets the first event through, then suppresses until cooldown expires.
+    /// `EdgeWithCooldown` lets the first event through, then suppresses until cooldown expires.
     #[test]
     fn req3_reporter_applies_debounce_before_publish() {
         let debounce = DebounceMode::EdgeWithCooldown {
             cooldown: Duration::from_secs(10).into(),
         };
-        let descriptor = stub_descriptor(FaultId::Numeric(1), to_static_short_string("Debounced").unwrap(), Some(debounce), None);
+        let descriptor = stub_descriptor(
+            FaultId::Numeric(1),
+            to_static_short_string("Debounced").unwrap(),
+            Some(debounce),
+            None,
+        );
         let sink = Arc::new(RecordingSink::new());
-        let mut reporter = make_reporter_with_descriptor(sink.clone(), descriptor);
+        let mut reporter = make_reporter_with_descriptor(Arc::clone(&sink) as _, descriptor);
 
         let record = reporter.create_record(LifecycleStage::Failed);
 
@@ -434,18 +509,26 @@ mod design_tests {
 
         // Rapid second publish is suppressed by cooldown
         reporter.publish("test/path", record.clone()).unwrap();
-        assert_eq!(sink.count(), 1, "Second event within cooldown should be suppressed");
+        assert_eq!(
+            sink.count(),
+            1,
+            "Second event within cooldown should be suppressed"
+        );
 
         // Third immediate publish also suppressed
         reporter.publish("test/path", record).unwrap();
-        assert_eq!(sink.count(), 1, "Third event within cooldown should be suppressed");
+        assert_eq!(
+            sink.count(),
+            1,
+            "Third event within cooldown should be suppressed"
+        );
     }
 
     // ============================================================================
     // REQ-3: Debounce variant tests
     // ============================================================================
 
-    /// CountWithinWindow suppresses events until min_count is reached within the window.
+    /// `CountWithinWindow` suppresses events until `min_count` is reached within the window.
     #[test]
     fn req3_debounce_count_within_window_suppresses_early_events() {
         let descriptor = stub_descriptor(
@@ -459,14 +542,18 @@ mod design_tests {
         );
 
         let sink = Arc::new(RecordingSink::new());
-        let mut reporter = make_reporter_with_descriptor(sink.clone(), descriptor);
+        let mut reporter = make_reporter_with_descriptor(Arc::clone(&sink) as _, descriptor);
 
         let record = reporter.create_record(LifecycleStage::Failed);
 
         // First 2 publishes suppressed (count < min_count)
         reporter.publish("test/path", record.clone()).unwrap();
         reporter.publish("test/path", record.clone()).unwrap();
-        assert_eq!(sink.count(), 0, "Events before min_count should be suppressed");
+        assert_eq!(
+            sink.count(),
+            0,
+            "Events before min_count should be suppressed"
+        );
 
         // Third publish fires (count == min_count)
         reporter.publish("test/path", record.clone()).unwrap();
@@ -474,10 +561,14 @@ mod design_tests {
 
         // Fourth also passes (count > min_count, still in window)
         reporter.publish("test/path", record).unwrap();
-        assert_eq!(sink.count(), 2, "Events after min_count should pass through");
+        assert_eq!(
+            sink.count(),
+            2,
+            "Events after min_count should pass through"
+        );
     }
 
-    /// HoldTime suppresses until the configured duration has elapsed since first event.
+    /// `HoldTime` suppresses until the configured duration has elapsed since first event.
     #[test]
     fn req3_debounce_hold_time_waits_for_duration() {
         let descriptor = stub_descriptor(
@@ -490,7 +581,7 @@ mod design_tests {
         );
 
         let sink = Arc::new(RecordingSink::new());
-        let mut reporter = make_reporter_with_descriptor(sink.clone(), descriptor);
+        let mut reporter = make_reporter_with_descriptor(Arc::clone(&sink) as _, descriptor);
 
         let record = reporter.create_record(LifecycleStage::Failed);
 
@@ -506,7 +597,7 @@ mod design_tests {
         assert_eq!(sink.count(), 1, "Event after hold time should pass through");
     }
 
-    /// EdgeWithCooldown passes the first event, then suppresses until cooldown expires.
+    /// `EdgeWithCooldown` passes the first event, then suppresses until cooldown expires.
     #[test]
     fn req3_debounce_edge_with_cooldown_passes_first_then_suppresses() {
         let descriptor = stub_descriptor(
@@ -519,7 +610,7 @@ mod design_tests {
         );
 
         let sink = Arc::new(RecordingSink::new());
-        let mut reporter = make_reporter_with_descriptor(sink.clone(), descriptor);
+        let mut reporter = make_reporter_with_descriptor(Arc::clone(&sink) as _, descriptor);
 
         let record = reporter.create_record(LifecycleStage::Failed);
 
@@ -529,7 +620,11 @@ mod design_tests {
 
         // Immediate second event suppressed (within cooldown)
         reporter.publish("test/path", record.clone()).unwrap();
-        assert_eq!(sink.count(), 1, "Event within cooldown should be suppressed");
+        assert_eq!(
+            sink.count(),
+            1,
+            "Event within cooldown should be suppressed"
+        );
 
         // Wait for cooldown to expire
         std::thread::sleep(Duration::from_millis(60));
@@ -553,7 +648,7 @@ mod design_tests {
         );
 
         let sink = Arc::new(RecordingSink::new());
-        let mut reporter = make_reporter_with_descriptor(sink.clone(), descriptor);
+        let mut reporter = make_reporter_with_descriptor(Arc::clone(&sink) as _, descriptor);
 
         // Accumulate 3 Failed events → fires at count=3
         let record_fail = reporter.create_record(LifecycleStage::Failed);
@@ -573,33 +668,46 @@ mod design_tests {
         reporter.publish("test/path", record_fail2.clone()).unwrap();
         reporter.publish("test/path", record_fail2.clone()).unwrap();
         // After reset: only 2 events, min_count=3, should be suppressed
-        assert_eq!(sink.count(), count_after_pass, "After Passed→Failed reset, 2 events still suppressed");
+        assert_eq!(
+            sink.count(),
+            count_after_pass,
+            "After Passed→Failed reset, 2 events still suppressed"
+        );
 
         // Third event after reset fires
         reporter.publish("test/path", record_fail2).unwrap();
-        assert_eq!(sink.count(), count_after_pass + 1, "Third event after reset should pass through");
+        assert_eq!(
+            sink.count(),
+            count_after_pass + 1,
+            "Third event after reset should pass through"
+        );
     }
 
     /// Reporter without debounce passes all events through to sink.
     #[test]
     fn req3_no_debounce_passes_all_events() {
         let sink = Arc::new(RecordingSink::new());
-        let mut reporter = make_reporter(sink.clone(), FaultId::Numeric(10));
+        let mut reporter = make_reporter(Arc::clone(&sink) as _, FaultId::Numeric(10));
 
         for _ in 0..10 {
             let record = reporter.create_record(LifecycleStage::Failed);
             reporter.publish("test/path", record).unwrap();
         }
 
-        assert_eq!(sink.count(), 10, "Without debounce, all events should pass through");
+        assert_eq!(
+            sink.count(),
+            10,
+            "Without debounce, all events should pass through"
+        );
     }
 
     // ============================================================================
     // REQ-4: Reporting test results (passed/failed lifecycle stages)
     // ============================================================================
 
-    /// REQ-4: All LifecycleStage variants exist and are distinct.
+    /// REQ-4: All `LifecycleStage` variants exist and are distinct.
     #[test]
+    #[allow(clippy::indexing_slicing)]
     fn req4_all_lifecycle_stages_exist() {
         let stages = [
             LifecycleStage::NotTested,
@@ -616,7 +724,7 @@ mod design_tests {
         }
     }
 
-    /// REQ-4: Created record contains the specified lifecycle_stage.
+    /// REQ-4: Created record contains the specified `lifecycle_stage`.
     #[test]
     fn req4_record_contains_lifecycle_stage() {
         let sink = Arc::new(RecordingSink::new());
@@ -630,7 +738,10 @@ mod design_tests {
             LifecycleStage::Passed,
         ] {
             let record = reporter.create_record(stage);
-            assert_eq!(record.lifecycle_stage, stage, "Mismatch for stage {stage:?}");
+            assert_eq!(
+                record.lifecycle_stage, stage,
+                "Mismatch for stage {stage:?}"
+            );
         }
     }
 
@@ -638,7 +749,7 @@ mod design_tests {
     #[test]
     fn req4_all_stages_publishable() {
         let sink = Arc::new(RecordingSink::new());
-        let mut reporter = make_reporter(sink.clone(), FaultId::Numeric(42));
+        let mut reporter = make_reporter(Arc::clone(&sink) as _, FaultId::Numeric(42));
 
         for stage in [
             LifecycleStage::NotTested,
@@ -673,7 +784,7 @@ mod design_tests {
     #[test]
     fn req5_multiple_reporters_independent() {
         let sink = Arc::new(RecordingSink::new());
-        let reporter1 = make_reporter(sink.clone(), FaultId::Numeric(0x1001));
+        let reporter1 = make_reporter(Arc::clone(&sink) as _, FaultId::Numeric(0x1001));
         let reporter2 = make_reporter(sink, FaultId::Numeric(0x1002));
 
         let record1 = reporter1.create_record(LifecycleStage::Failed);
@@ -692,7 +803,12 @@ mod design_tests {
 
         let reporter = Reporter {
             sink,
-            descriptor: stub_descriptor(FaultId::Numeric(1), to_static_short_string("Test").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(1),
+                to_static_short_string("Test").unwrap(),
+                None,
+                None,
+            ),
             config,
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -709,14 +825,14 @@ mod design_tests {
 
     /// REQ-6: Publish with a slow sink should still return quickly
     /// (because the real sink enqueues and returns, not blocking on IPC).
-    /// Here we test that the API call through Reporter.publish() is direct -
-    /// it calls sink.publish() synchronously, so if the sink is slow,
-    /// it will be slow. The non-blocking contract is on the REAL FaultManagerSink
+    /// Here we test that the API call through `Reporter.publish()` is direct -
+    /// it calls `sink.publish()` synchronously, so if the sink is slow,
+    /// it will be slow. The non-blocking contract is on the REAL `FaultManagerSink`
     /// which enqueues to a channel.
     #[test]
     fn req6_publish_is_synchronous_call_to_sink() {
         let sink = Arc::new(RecordingSink::new());
-        let mut reporter = make_reporter(sink.clone(), FaultId::Numeric(42));
+        let mut reporter = make_reporter(Arc::clone(&sink) as _, FaultId::Numeric(42));
 
         let record = reporter.create_record(LifecycleStage::Failed);
         let start = Instant::now();
@@ -724,7 +840,10 @@ mod design_tests {
         let elapsed = start.elapsed();
 
         // RecordingSink is fast - publish should be near-instant
-        assert!(elapsed < Duration::from_millis(50), "publish took {elapsed:?}, expected <50ms");
+        assert!(
+            elapsed < Duration::from_millis(50),
+            "publish took {elapsed:?}, expected <50ms"
+        );
         assert_eq!(sink.count(), 1);
     }
 
@@ -733,7 +852,7 @@ mod design_tests {
     #[cfg_attr(miri, ignore)] // Miri is 10-100× slower; timing assertion is meaningless.
     fn req6_rapid_publishes_complete_quickly() {
         let sink = Arc::new(RecordingSink::new());
-        let mut reporter = make_reporter(sink.clone(), FaultId::Numeric(42));
+        let mut reporter = make_reporter(Arc::clone(&sink) as _, FaultId::Numeric(42));
 
         let start = Instant::now();
         for _ in 0..100 {
@@ -743,7 +862,10 @@ mod design_tests {
         let elapsed = start.elapsed();
 
         assert_eq!(sink.count(), 100);
-        assert!(elapsed < Duration::from_millis(100), "100 publishes took {elapsed:?}, expected <100ms");
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "100 publishes took {elapsed:?}, expected <100ms"
+        );
     }
 
     // ============================================================================
@@ -759,8 +881,14 @@ mod design_tests {
             faults: vec![],
         };
 
-        let catalog1 = FaultCatalogBuilder::new().cfg_struct(config.clone()).unwrap().build();
-        let catalog2 = FaultCatalogBuilder::new().cfg_struct(config).unwrap().build();
+        let catalog1 = FaultCatalogBuilder::new()
+            .cfg_struct(config.clone())
+            .unwrap()
+            .build();
+        let catalog2 = FaultCatalogBuilder::new()
+            .cfg_struct(config)
+            .unwrap()
+            .build();
 
         assert_eq!(catalog1.config_hash(), catalog2.config_hash());
     }
@@ -779,8 +907,14 @@ mod design_tests {
             faults: vec![],
         };
 
-        let catalog1 = FaultCatalogBuilder::new().cfg_struct(config1).unwrap().build();
-        let catalog2 = FaultCatalogBuilder::new().cfg_struct(config2).unwrap().build();
+        let catalog1 = FaultCatalogBuilder::new()
+            .cfg_struct(config1)
+            .unwrap()
+            .build();
+        let catalog2 = FaultCatalogBuilder::new()
+            .cfg_struct(config2)
+            .unwrap()
+            .build();
 
         assert_ne!(catalog1.config_hash(), catalog2.config_hash());
     }
@@ -788,17 +922,28 @@ mod design_tests {
     /// REQ-7: Catalog can look up descriptors by ID.
     #[test]
     fn req7_catalog_descriptor_lookup() {
-        let desc = stub_descriptor(FaultId::Numeric(42), to_static_short_string("Test fault").unwrap(), None, None);
+        let desc = stub_descriptor(
+            FaultId::Numeric(42),
+            to_static_short_string("Test fault").unwrap(),
+            None,
+            None,
+        );
         let config = FaultCatalogConfig {
             id: "test".into(),
             version: 1,
             faults: vec![desc.clone()],
         };
 
-        let catalog = FaultCatalogBuilder::new().cfg_struct(config).unwrap().build();
+        let catalog = FaultCatalogBuilder::new()
+            .cfg_struct(config)
+            .unwrap()
+            .build();
 
         assert!(catalog.descriptor(&FaultId::Numeric(42)).is_some());
-        assert_eq!(catalog.descriptor(&FaultId::Numeric(42)).unwrap().name, desc.name);
+        assert_eq!(
+            catalog.descriptor(&FaultId::Numeric(42)).unwrap().name,
+            desc.name
+        );
         assert!(catalog.descriptor(&FaultId::Numeric(999)).is_none());
     }
 
@@ -815,7 +960,10 @@ mod design_tests {
             version: 1,
             faults: vec![],
         };
-        let catalog = FaultCatalogBuilder::new().cfg_struct(config).unwrap().build();
+        let catalog = FaultCatalogBuilder::new()
+            .cfg_struct(config)
+            .unwrap()
+            .build();
         assert!(!catalog.config_hash().is_empty());
         // Catalog created without DFM connection = no DFM redeploy needed
     }
@@ -824,7 +972,7 @@ mod design_tests {
     // REQ-10: LogHook support
     // ============================================================================
 
-    /// Test helper: LogHook that counts on_publish calls.
+    /// Test helper: `LogHook` that counts `on_publish` calls.
     struct CountingLogHook {
         publish_count: AtomicU32,
         error_count: AtomicU32,
@@ -848,48 +996,74 @@ mod design_tests {
         }
     }
 
-    /// REQ-10: LogHook on_publish is called after successful sink publish.
+    /// REQ-10: `LogHook` `on_publish` is called after successful sink publish.
     #[test]
     fn req10_log_hook_called_on_successful_publish() {
         let sink = Arc::new(RecordingSink::new());
         let hook = Arc::new(CountingLogHook::new());
         let mut reporter = Reporter {
-            sink: sink.clone(),
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("LogHookTest").unwrap(), None, None),
+            sink: Arc::clone(&sink) as _,
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("LogHookTest").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
-            log_hook: Some(hook.clone()),
+            log_hook: Some(Arc::clone(&hook) as _),
         };
 
         let record = reporter.create_record(LifecycleStage::Failed);
         reporter.publish("test/path", record).unwrap();
 
-        assert_eq!(hook.publish_count.load(Ordering::SeqCst), 1, "on_publish should be called once");
-        assert_eq!(hook.error_count.load(Ordering::SeqCst), 0, "on_error should not be called on success");
+        assert_eq!(
+            hook.publish_count.load(Ordering::SeqCst),
+            1,
+            "on_publish should be called once"
+        );
+        assert_eq!(
+            hook.error_count.load(Ordering::SeqCst),
+            0,
+            "on_error should not be called on success"
+        );
         assert_eq!(sink.count(), 1, "Record should reach the sink");
     }
 
-    /// REQ-10: LogHook on_error is called when sink publish fails.
+    /// REQ-10: `LogHook` `on_error` is called when sink publish fails.
     #[test]
     fn req10_log_hook_on_error_called_when_sink_fails() {
         let sink = Arc::new(FailingSink::transport_down());
         let hook = Arc::new(CountingLogHook::new());
         let mut reporter = Reporter {
             sink,
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("LogHookErrorTest").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("LogHookErrorTest").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
-            log_hook: Some(hook.clone()),
+            log_hook: Some(Arc::clone(&hook) as _),
         };
 
         let record = reporter.create_record(LifecycleStage::Failed);
         let result = reporter.publish("test/path", record);
 
         assert!(result.is_err());
-        assert_eq!(hook.error_count.load(Ordering::SeqCst), 1, "on_error should be called once");
-        assert_eq!(hook.publish_count.load(Ordering::SeqCst), 0, "on_publish should not be called on failure");
+        assert_eq!(
+            hook.error_count.load(Ordering::SeqCst),
+            1,
+            "on_error should be called once"
+        );
+        assert_eq!(
+            hook.publish_count.load(Ordering::SeqCst),
+            0,
+            "on_publish should not be called on failure"
+        );
     }
 
     /// REQ-10: Publish works without log hook (backward compatible).
@@ -897,8 +1071,13 @@ mod design_tests {
     fn req10_publish_works_without_log_hook() {
         let sink = Arc::new(RecordingSink::new());
         let mut reporter = Reporter {
-            sink: sink.clone(),
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("NoHookTest").unwrap(), None, None),
+            sink: Arc::clone(&sink) as _,
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("NoHookTest").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -910,18 +1089,23 @@ mod design_tests {
         assert_eq!(sink.count(), 1);
     }
 
-    /// REQ-10: LogHook called for every publish, not just the first.
+    /// REQ-10: `LogHook` called for every publish, not just the first.
     #[test]
     fn req10_log_hook_called_on_every_publish() {
         let sink = Arc::new(RecordingSink::new());
         let hook = Arc::new(CountingLogHook::new());
         let mut reporter = Reporter {
-            sink: sink.clone(),
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("MultiPublish").unwrap(), None, None),
+            sink: Arc::clone(&sink) as _,
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("MultiPublish").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
-            log_hook: Some(hook.clone()),
+            log_hook: Some(Arc::clone(&hook) as _),
         };
 
         for _ in 0..5 {
@@ -937,7 +1121,7 @@ mod design_tests {
         assert_eq!(sink.count(), 5);
     }
 
-    /// REQ-10: LogHook is NOT called for debounce-suppressed events.
+    /// REQ-10: `LogHook` is NOT called for debounce-suppressed events.
     #[test]
     fn req10_log_hook_not_called_for_suppressed_events() {
         let sink = Arc::new(RecordingSink::new());
@@ -950,35 +1134,50 @@ mod design_tests {
             }),
             None,
         );
-        let debouncer = descriptor.reporter_side_debounce.map(|mode| mode.into_debouncer());
+        let debouncer = descriptor
+            .reporter_side_debounce
+            .map(common::debounce::DebounceMode::into_debouncer);
         let mut reporter = Reporter {
-            sink: sink.clone(),
+            sink: Arc::clone(&sink) as _,
             descriptor,
             config: stub_config(),
             debouncer,
             last_stage: LifecycleStage::NotTested,
-            log_hook: Some(hook.clone()),
+            log_hook: Some(Arc::clone(&hook) as _),
         };
 
         // First event passes through debounce and sink
         let record = reporter.create_record(LifecycleStage::Failed);
         reporter.publish("test/path", record).unwrap();
-        assert_eq!(hook.publish_count.load(Ordering::SeqCst), 1, "First event should trigger hook");
+        assert_eq!(
+            hook.publish_count.load(Ordering::SeqCst),
+            1,
+            "First event should trigger hook"
+        );
 
         // Second event is suppressed by debounce — hook should NOT be called
         let record = reporter.create_record(LifecycleStage::Failed);
         reporter.publish("test/path", record).unwrap();
-        assert_eq!(hook.publish_count.load(Ordering::SeqCst), 1, "Suppressed event should NOT trigger hook");
+        assert_eq!(
+            hook.publish_count.load(Ordering::SeqCst),
+            1,
+            "Suppressed event should NOT trigger hook"
+        );
         assert_eq!(sink.count(), 1, "Only first event should reach sink");
     }
 
-    /// REQ-10: NoOpLogHook implements LogHook with zero overhead.
+    /// REQ-10: `NoOpLogHook` implements `LogHook` with zero overhead.
     #[test]
     fn req10_noop_log_hook_compiles_and_runs() {
         use crate::sink::NoOpLogHook;
 
         let hook = NoOpLogHook;
-        let record = stub_record(stub_descriptor(FaultId::Numeric(1), to_static_short_string("Noop").unwrap(), None, None));
+        let record = stub_record(stub_descriptor(
+            FaultId::Numeric(1),
+            to_static_short_string("Noop").unwrap(),
+            None,
+            None,
+        ));
         let error = SinkError::TransportDown;
 
         // These should compile and do nothing
@@ -1010,7 +1209,7 @@ mod error_tests {
     // SinkError variant tests
     // ============================================================================
 
-    /// All SinkError variants implement Debug and Display.
+    /// All `SinkError` variants implement Debug and Display.
     #[test]
     fn sinkerror_all_variants_implement_debug_display() {
         let errors = vec![
@@ -1032,7 +1231,7 @@ mod error_tests {
         }
     }
 
-    /// SinkError::TransportDown represents a recoverable transport failure.
+    /// `SinkError::TransportDown` represents a recoverable transport failure.
     #[test]
     fn sinkerror_transport_down_is_recoverable() {
         let err = SinkError::TransportDown;
@@ -1044,15 +1243,18 @@ mod error_tests {
         );
     }
 
-    /// SinkError::Timeout contains meaningful context.
+    /// `SinkError::Timeout` contains meaningful context.
     #[test]
     fn sinkerror_timeout_contains_context() {
         let err = SinkError::Timeout;
         let msg = format!("{err}");
-        assert!(msg.to_lowercase().contains("timeout"), "Display should contain 'timeout': {msg}");
+        assert!(
+            msg.to_lowercase().contains("timeout"),
+            "Display should contain 'timeout': {msg}"
+        );
     }
 
-    /// SinkError::RateLimited indicates backpressure.
+    /// `SinkError::RateLimited` indicates backpressure.
     #[test]
     fn sinkerror_rate_limited_backpressure() {
         let err = SinkError::RateLimited;
@@ -1063,7 +1265,7 @@ mod error_tests {
         );
     }
 
-    /// SinkError::BadDescriptor carries a contextual message.
+    /// `SinkError::BadDescriptor` carries a contextual message.
     #[test]
     fn sinkerror_bad_descriptor_message() {
         let err = SinkError::BadDescriptor(Cow::Borrowed("invalid fault ID format"));
@@ -1074,15 +1276,18 @@ mod error_tests {
         );
     }
 
-    /// SinkError::Other accepts arbitrary static messages.
+    /// `SinkError::Other` accepts arbitrary static messages.
     #[test]
     fn sinkerror_other_accepts_static_msg() {
         let err = SinkError::Other(Cow::Borrowed("custom error context"));
         let msg = format!("{err}");
-        assert!(msg.contains("custom error context"), "Display should contain the message: {msg}");
+        assert!(
+            msg.contains("custom error context"),
+            "Display should contain the message: {msg}"
+        );
     }
 
-    /// SinkError implements PartialEq for test assertions.
+    /// `SinkError` implements `PartialEq` for test assertions.
     #[test]
     fn sinkerror_equality_comparison() {
         assert_eq!(SinkError::TransportDown, SinkError::TransportDown);
@@ -1092,10 +1297,13 @@ mod error_tests {
             SinkError::BadDescriptor(Cow::Borrowed("same")),
             SinkError::BadDescriptor(Cow::Borrowed("same"))
         );
-        assert_ne!(SinkError::BadDescriptor(Cow::Borrowed("a")), SinkError::BadDescriptor(Cow::Borrowed("b")));
+        assert_ne!(
+            SinkError::BadDescriptor(Cow::Borrowed("a")),
+            SinkError::BadDescriptor(Cow::Borrowed("b"))
+        );
     }
 
-    /// SinkError is Clone (Cow<str> prevents Copy, but Clone is still available).
+    /// `SinkError` is Clone (Cow<str> prevents Copy, but Clone is still available).
     #[test]
     fn sinkerror_is_clone() {
         let err = SinkError::TransportDown;
@@ -1112,13 +1320,18 @@ mod error_tests {
     // Publish error propagation tests
     // ============================================================================
 
-    /// FailingSink::transport_down propagates TransportDown through publish.
+    /// `FailingSink::transport_down` propagates `TransportDown` through publish.
     #[test]
     fn publish_propagates_transport_down() {
         let sink = Arc::new(FailingSink::transport_down());
         let mut reporter = Reporter {
             sink,
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("Test").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("Test").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -1131,13 +1344,18 @@ mod error_tests {
         assert_eq!(result, Err(SinkError::TransportDown));
     }
 
-    /// FailingSink::timeout propagates Timeout through publish.
+    /// `FailingSink::timeout` propagates Timeout through publish.
     #[test]
     fn publish_propagates_timeout() {
         let sink = Arc::new(FailingSink::timeout());
         let mut reporter = Reporter {
             sink,
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("Test").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("Test").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -1156,7 +1374,12 @@ mod error_tests {
         let sink = Arc::new(FailingSink::transport_down());
         let mut reporter = Reporter {
             sink,
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("Test").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("Test").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -1174,28 +1397,34 @@ mod error_tests {
     // Catalog builder error tests
     // ============================================================================
 
-    /// FaultCatalogBuilder returns error on invalid JSON via try_build().
+    /// `FaultCatalogBuilder` returns error on invalid JSON via `try_build()`.
     #[test]
     fn catalog_builder_errors_on_invalid_json() {
         use common::catalog::CatalogBuildError;
-        let result = FaultCatalogBuilder::new().json_string("{ invalid json }").unwrap().try_build();
+        let result = FaultCatalogBuilder::new()
+            .json_string("{ invalid json }")
+            .unwrap()
+            .try_build();
         assert!(
             matches!(result, Err(CatalogBuildError::InvalidJson(_))),
             "Should return InvalidJson error on invalid JSON input, got: {result:?}"
         );
     }
 
-    /// FaultCatalogBuilder returns error on missing required fields.
+    /// `FaultCatalogBuilder` returns error on missing required fields.
     #[test]
     fn catalog_builder_errors_on_missing_fields() {
         let result = FaultCatalogBuilder::new()
             .json_string(r#"{"id": "test"}"#) // missing version, faults
             .unwrap()
             .try_build();
-        assert!(result.is_err(), "Should return error on missing required fields");
+        assert!(
+            result.is_err(),
+            "Should return error on missing required fields"
+        );
     }
 
-    /// FaultCatalogBuilder returns error when no input is configured.
+    /// `FaultCatalogBuilder` returns error when no input is configured.
     #[test]
     fn catalog_builder_errors_on_no_input() {
         use common::catalog::CatalogBuildError;
@@ -1206,7 +1435,7 @@ mod error_tests {
         );
     }
 
-    /// FaultCatalogBuilder returns error when configured twice.
+    /// `FaultCatalogBuilder` returns error when configured twice.
     #[test]
     fn catalog_builder_errors_on_double_configure() {
         use common::catalog::CatalogBuildError;
@@ -1215,7 +1444,10 @@ mod error_tests {
             version: 1,
             faults: vec![],
         };
-        let result = FaultCatalogBuilder::new().cfg_struct(config.clone()).unwrap().cfg_struct(config); // double configure → Err(AlreadyConfigured)
+        let result = FaultCatalogBuilder::new()
+            .cfg_struct(config.clone())
+            .unwrap()
+            .cfg_struct(config); // double configure → Err(AlreadyConfigured)
         assert!(
             matches!(result, Err(CatalogBuildError::AlreadyConfigured)),
             "Should return AlreadyConfigured error when builder is configured twice"
@@ -1228,21 +1460,34 @@ mod error_tests {
         let config = FaultCatalogConfig {
             id: "test".into(),
             version: 1,
-            faults: vec![stub_descriptor(FaultId::Numeric(1), to_static_short_string("Known").unwrap(), None, None)],
+            faults: vec![stub_descriptor(
+                FaultId::Numeric(1),
+                to_static_short_string("Known").unwrap(),
+                None,
+                None,
+            )],
         };
 
-        let catalog = FaultCatalogBuilder::new().cfg_struct(config).unwrap().build();
+        let catalog = FaultCatalogBuilder::new()
+            .cfg_struct(config)
+            .unwrap()
+            .build();
         assert!(catalog.descriptor(&FaultId::Numeric(1)).is_some());
         assert!(catalog.descriptor(&FaultId::Numeric(999)).is_none());
     }
 
-    /// Catalog try_id returns IdTooLong for excessively long catalog ids.
+    /// Catalog `try_id` returns `IdTooLong` for excessively long catalog ids.
     #[test]
     fn catalog_try_id_returns_error_for_long_id() {
         use common::catalog::CatalogBuildError;
         // LongString capacity is 128 bytes — exceed it
         let long_id = "a".repeat(200);
-        let catalog = common::catalog::FaultCatalog::new(long_id.into(), 1, std::collections::HashMap::new(), vec![]);
+        let catalog = common::catalog::FaultCatalog::new(
+            long_id.into(),
+            1,
+            std::collections::HashMap::new(),
+            vec![],
+        );
         let result = catalog.try_id();
         assert!(
             matches!(result, Err(CatalogBuildError::IdTooLong(_))),
@@ -1250,14 +1495,19 @@ mod error_tests {
         );
     }
 
-    /// Catalog try_id succeeds for valid-length ids.
+    /// Catalog `try_id` succeeds for valid-length ids.
     #[test]
     fn catalog_try_id_succeeds_for_valid_id() {
-        let catalog = common::catalog::FaultCatalog::new("my_catalog".into(), 1, std::collections::HashMap::new(), vec![]);
+        let catalog = common::catalog::FaultCatalog::new(
+            "my_catalog".into(),
+            1,
+            std::collections::HashMap::new(),
+            vec![],
+        );
         assert!(catalog.try_id().is_ok());
     }
 
-    /// try_build returns MissingConfig for unconfigured builder.
+    /// `try_build` returns `MissingConfig` for unconfigured builder.
     #[test]
     fn catalog_try_build_returns_missing_config() {
         use common::catalog::CatalogBuildError;
@@ -1268,18 +1518,21 @@ mod error_tests {
         );
     }
 
-    /// try_build returns InvalidJson for malformed JSON.
+    /// `try_build` returns `InvalidJson` for malformed JSON.
     #[test]
     fn catalog_try_build_returns_invalid_json() {
         use common::catalog::CatalogBuildError;
-        let result = FaultCatalogBuilder::new().json_string("not valid json").unwrap().try_build();
+        let result = FaultCatalogBuilder::new()
+            .json_string("not valid json")
+            .unwrap()
+            .try_build();
         assert!(
             matches!(result, Err(CatalogBuildError::InvalidJson(_))),
             "Should return InvalidJson for malformed JSON"
         );
     }
 
-    /// try_build returns Io error for non-existent file.
+    /// `try_build` returns Io error for non-existent file.
     #[test]
     fn catalog_try_build_returns_io_error_for_missing_file() {
         use common::catalog::CatalogBuildError;
@@ -1287,7 +1540,10 @@ mod error_tests {
             .json_file(std::path::PathBuf::from("/nonexistent/path/catalog.json"))
             .unwrap()
             .try_build();
-        assert!(matches!(result, Err(CatalogBuildError::Io(_))), "Should return Io error for missing file");
+        assert!(
+            matches!(result, Err(CatalogBuildError::Io(_))),
+            "Should return Io error for missing file"
+        );
     }
 
     /// Publish rejects paths that exceed max length.
@@ -1296,7 +1552,12 @@ mod error_tests {
         let sink = Arc::new(crate::test_utils::RecordingSink::new());
         let mut reporter = crate::reporter::Reporter {
             sink,
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("Test").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("Test").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: common::fault::LifecycleStage::NotTested,
@@ -1313,7 +1574,7 @@ mod error_tests {
         let _result = reporter.publish(&long_path, record);
     }
 
-    /// SinkError variants cover all expected error conditions.
+    /// `SinkError` variants cover all expected error conditions.
     #[test]
     fn sinkerror_queue_full_variant() {
         let err = SinkError::QueueFull;
@@ -1356,11 +1617,16 @@ mod concurrent_tests {
 
         let handles: Vec<_> = (0..10)
             .map(|i| {
-                let sink = sink.clone();
+                let sink = Arc::clone(&sink);
                 thread::spawn(move || {
                     let mut reporter = Reporter {
                         sink,
-                        descriptor: stub_descriptor(FaultId::Numeric(i), to_static_short_string("Fault").unwrap(), None, None),
+                        descriptor: stub_descriptor(
+                            FaultId::Numeric(i),
+                            to_static_short_string("Fault").unwrap(),
+                            None,
+                            None,
+                        ),
                         config: stub_config(),
                         debouncer: None,
                         last_stage: LifecycleStage::NotTested,
@@ -1393,11 +1659,16 @@ mod concurrent_tests {
         let start = Instant::now();
         let handles: Vec<_> = (0..num_threads)
             .map(|i| {
-                let sink = sink.clone();
+                let sink = Arc::clone(&sink);
                 thread::spawn(move || {
                     let mut reporter = Reporter {
                         sink,
-                        descriptor: stub_descriptor(FaultId::Numeric(i), to_static_short_string("Stress").unwrap(), None, None),
+                        descriptor: stub_descriptor(
+                            FaultId::Numeric(i),
+                            to_static_short_string("Stress").unwrap(),
+                            None,
+                            None,
+                        ),
                         config: stub_config(),
                         debouncer: None,
                         last_stage: LifecycleStage::NotTested,
@@ -1422,20 +1693,28 @@ mod concurrent_tests {
 
         assert_eq!(count, expected, "Expected {expected} records, got {count}");
         // Should complete in reasonable time (under 5 seconds)
-        assert!(elapsed < Duration::from_secs(5), "Stress test took {elapsed:?}, expected <5s");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "Stress test took {elapsed:?}, expected <5s"
+        );
     }
 
-    /// RecordingSink is thread-safe for concurrent writes.
+    /// `RecordingSink` is thread-safe for concurrent writes.
     #[test]
     fn recording_sink_thread_safe() {
         let sink = Arc::new(RecordingSink::new());
 
         let handles: Vec<_> = (0..5)
             .map(|i| {
-                let sink = sink.clone();
+                let sink = Arc::clone(&sink);
                 thread::spawn(move || {
                     for _ in 0..20 {
-                        let record = stub_record(stub_descriptor(FaultId::Numeric(i), to_static_short_string("Test").unwrap(), None, None));
+                        let record = stub_record(stub_descriptor(
+                            FaultId::Numeric(i),
+                            to_static_short_string("Test").unwrap(),
+                            None,
+                            None,
+                        ));
                         sink.publish("test/path", record).unwrap();
                     }
                 })
@@ -1455,8 +1734,13 @@ mod concurrent_tests {
     fn reporter_shared_via_arc() {
         let sink = Arc::new(AtomicCountingSink::new());
         let reporter = Arc::new(std::sync::Mutex::new(Reporter {
-            sink: sink.clone(),
-            descriptor: stub_descriptor(FaultId::Numeric(1), to_static_short_string("Shared").unwrap(), None, None),
+            sink: Arc::clone(&sink) as _,
+            descriptor: stub_descriptor(
+                FaultId::Numeric(1),
+                to_static_short_string("Shared").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -1465,7 +1749,7 @@ mod concurrent_tests {
 
         let handles: Vec<_> = (0..4)
             .map(|_| {
-                let reporter = reporter.clone();
+                let reporter = Arc::clone(&reporter);
                 thread::spawn(move || {
                     for _ in 0..25 {
                         let mut r = reporter.lock().unwrap();
@@ -1483,16 +1767,21 @@ mod concurrent_tests {
         assert_eq!(sink.count(), 100);
     }
 
-    /// Drop of FaultManagerSink does not deadlock with concurrent operations.
+    /// Drop of `FaultManagerSink` does not deadlock with concurrent operations.
     #[test]
     fn drop_sink_no_deadlock() {
         let sink = Arc::new(SlowSink::new(Duration::from_millis(1)));
-        let sink_clone = sink.clone();
+        let sink_clone = Arc::clone(&sink);
 
         let handle = thread::spawn(move || {
             let mut reporter = Reporter {
                 sink: sink_clone,
-                descriptor: stub_descriptor(FaultId::Numeric(1), to_static_short_string("Test").unwrap(), None, None),
+                descriptor: stub_descriptor(
+                    FaultId::Numeric(1),
+                    to_static_short_string("Test").unwrap(),
+                    None,
+                    None,
+                ),
                 config: stub_config(),
                 debouncer: None,
                 last_stage: LifecycleStage::NotTested,
@@ -1516,16 +1805,24 @@ mod concurrent_tests {
         });
 
         let result = rx.recv_timeout(Duration::from_secs(5));
-        assert!(result.is_ok(), "Deadlock detected - thread didn't complete in 5s");
+        assert!(
+            result.is_ok(),
+            "Deadlock detected - thread didn't complete in 5s"
+        );
     }
 
-    /// Creating records from multiple threads is safe (create_record is read-only).
+    /// Creating records from multiple threads is safe (`create_record` is read-only).
     #[test]
     fn concurrent_create_record() {
         let sink = Arc::new(RecordingSink::new());
         let reporter = Arc::new(Reporter {
             sink,
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("Concurrent").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("Concurrent").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -1534,7 +1831,7 @@ mod concurrent_tests {
 
         let handles: Vec<_> = (0..10)
             .map(|_| {
-                let reporter = reporter.clone();
+                let reporter = Arc::clone(&reporter);
                 thread::spawn(move || {
                     for stage in [
                         LifecycleStage::NotTested,
@@ -1551,7 +1848,8 @@ mod concurrent_tests {
             .collect();
 
         for h in handles {
-            h.join().expect("Thread panicked during concurrent create_record");
+            h.join()
+                .expect("Thread panicked during concurrent create_record");
         }
     }
 }
@@ -1577,7 +1875,7 @@ mod timestamp_tests {
     // Current behavior (timestamps are zero)
     // ============================================================================
 
-    /// Documents current behavior: IpcTimestamp::default() is zero.
+    /// Documents current behavior: `IpcTimestamp::default()` is zero.
     #[test]
     fn timestamp_default_is_zero() {
         let default_ts = IpcTimestamp::default();
@@ -1585,13 +1883,18 @@ mod timestamp_tests {
         assert_eq!(default_ts.nanoseconds, 0);
     }
 
-    /// Verifies that create_record populates timestamps from system time.
+    /// Verifies that `create_record` populates timestamps from system time.
     #[test]
     fn timestamp_is_populated_in_create_record() {
         let sink = Arc::new(RecordingSink::new());
         let reporter = Reporter {
             sink,
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("Test").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("Test").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -1601,7 +1904,11 @@ mod timestamp_tests {
         let record = reporter.create_record(LifecycleStage::Failed);
 
         // After fix: timestamp should be non-zero
-        assert!(record.time.seconds_since_epoch > 0, "Timestamp should be populated: {:?}", record.time);
+        assert!(
+            record.time.seconds_since_epoch > 0,
+            "Timestamp should be populated: {:?}",
+            record.time
+        );
     }
 
     // ============================================================================
@@ -1614,7 +1921,12 @@ mod timestamp_tests {
         let sink = Arc::new(RecordingSink::new());
         let reporter = Reporter {
             sink,
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("Test").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("Test").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -1635,12 +1947,20 @@ mod timestamp_tests {
     fn timestamp_is_recent_after_fix() {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        let before = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let before = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         let sink = Arc::new(RecordingSink::new());
         let reporter = Reporter {
             sink,
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("Test").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("Test").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -1649,7 +1969,10 @@ mod timestamp_tests {
 
         let record = reporter.create_record(LifecycleStage::Failed);
 
-        let after = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let after = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         assert!(
             record.time.seconds_since_epoch >= before,
@@ -1671,7 +1994,12 @@ mod timestamp_tests {
         let sink = Arc::new(RecordingSink::new());
         let reporter = Reporter {
             sink,
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("Test").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("Test").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -1693,7 +2021,12 @@ mod timestamp_tests {
         let sink = Arc::new(RecordingSink::new());
         let reporter = Reporter {
             sink,
-            descriptor: stub_descriptor(FaultId::Numeric(42), to_static_short_string("Test").unwrap(), None, None),
+            descriptor: stub_descriptor(
+                FaultId::Numeric(42),
+                to_static_short_string("Test").unwrap(),
+                None,
+                None,
+            ),
             config: stub_config(),
             debouncer: None,
             last_stage: LifecycleStage::NotTested,
@@ -1705,9 +2038,13 @@ mod timestamp_tests {
         for _ in 0..10 {
             let record = reporter.create_record(LifecycleStage::Failed);
 
-            let curr_total = record.time.seconds_since_epoch as u128 * 1_000_000_000 + record.time.nanoseconds as u128;
+            let curr_total = u128::from(record.time.seconds_since_epoch) * 1_000_000_000
+                + u128::from(record.time.nanoseconds);
 
-            assert!(curr_total >= prev_total, "Timestamps should be monotonically non-decreasing");
+            assert!(
+                curr_total >= prev_total,
+                "Timestamps should be monotonically non-decreasing"
+            );
 
             prev_total = curr_total;
         }

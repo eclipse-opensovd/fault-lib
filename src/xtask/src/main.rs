@@ -1,14 +1,14 @@
-// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
 
 use std::collections::HashMap;
 use std::env;
@@ -46,13 +46,31 @@ fn main() {
             clippy(envs, cli_env_vars, &passthrough_args);
         }
         "run" => {
-            run_build("debug_build", &["run"], envs, cli_env_vars, &passthrough_args);
+            run_build(
+                "debug_build",
+                &["run"],
+                envs,
+                cli_env_vars,
+                &passthrough_args,
+            );
         }
         "build:release" => {
-            run_build("release_build", &["build", "--release"], envs, cli_env_vars, &passthrough_args);
+            run_build(
+                "release_build",
+                &["build", "--release"],
+                envs,
+                cli_env_vars,
+                &passthrough_args,
+            );
         }
         "run:release" => {
-            run_build("release_build", &["run", "--release"], envs, cli_env_vars, &passthrough_args);
+            run_build(
+                "release_build",
+                &["run", "--release"],
+                envs,
+                cli_env_vars,
+                &passthrough_args,
+            );
         }
         "build:test" | "test" => {
             test(envs, cli_env_vars, &passthrough_args);
@@ -69,7 +87,12 @@ fn main() {
         "build:qnx_arm" => {
             run_build(
                 "",
-                &["+qnx7.1_rust", "build", "--target", "aarch64-unknown-nto-qnx710"],
+                &[
+                    "+qnx7.1_rust",
+                    "build",
+                    "--target",
+                    "aarch64-unknown-nto-qnx710",
+                ],
                 envs,
                 cli_env_vars,
                 &passthrough_args,
@@ -82,7 +105,7 @@ fn main() {
             check_license_header();
             run_command(
                 &["fmt", "--", "--check"],
-                HashMap::default(),
+                &HashMap::default(),
                 &passthrough_args,
                 Some("Wrong formatting@"),
             );
@@ -91,10 +114,15 @@ fn main() {
             test(envs, cli_env_vars, &passthrough_args);
         }
         "fmt" => {
-            run_command(&["fmt"], HashMap::default(), &passthrough_args, None);
+            run_command(&["fmt"], &HashMap::default(), &passthrough_args, None);
         }
         "fmt:check" => {
-            run_command(&["fmt", "--", "--check"], HashMap::default(), &passthrough_args, Some("Wrong formatting"));
+            run_command(
+                &["fmt", "--", "--check"],
+                &HashMap::default(),
+                &passthrough_args,
+                Some("Wrong formatting"),
+            );
         }
         "miri" => {
             miri(envs, cli_env_vars, &passthrough_args);
@@ -106,7 +134,11 @@ fn main() {
     }
 }
 
-fn clippy(envs: HashMap<String, String>, cli_env_vars: HashMap<String, String>, passthrough_args: &[String]) {
+fn clippy(
+    envs: HashMap<String, String>,
+    cli_env_vars: HashMap<String, String>,
+    passthrough_args: &[String],
+) {
     run_build(
         "clippy",
         &["clippy", "--all-targets", "--all-features"],
@@ -116,11 +148,25 @@ fn clippy(envs: HashMap<String, String>, cli_env_vars: HashMap<String, String>, 
     );
 }
 
-fn test(envs: HashMap<String, String>, cli_env_vars: HashMap<String, String>, passthrough_args: &[String]) {
-    run_build("test_build", &["test"], envs, cli_env_vars, passthrough_args);
+fn test(
+    envs: HashMap<String, String>,
+    cli_env_vars: HashMap<String, String>,
+    passthrough_args: &[String],
+) {
+    run_build(
+        "test_build",
+        &["test"],
+        envs,
+        cli_env_vars,
+        passthrough_args,
+    );
 }
 
-fn miri(mut envs: HashMap<String, String>, cli_env_vars: HashMap<String, String>, passthrough_args: &[String]) {
+fn miri(
+    mut envs: HashMap<String, String>,
+    cli_env_vars: HashMap<String, String>,
+    passthrough_args: &[String],
+) {
     envs.insert("MIRIFLAGS".into(), "-Zmiri-disable-isolation".into());
     // Miri cannot interpret IPC syscalls (integration_tests) or proc-macro
     // build scripts (xtask), so both are excluded.
@@ -136,13 +182,13 @@ fn miri(mut envs: HashMap<String, String>, cli_env_vars: HashMap<String, String>
     ];
     args.extend(passthrough_args.iter().cloned());
 
-    let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
 
     for (k, v) in cli_env_vars {
         envs.insert(k, v);
     }
 
-    run_command(&args_ref, envs, &[], None);
+    run_command(&args_ref, &envs, &[], None);
 }
 
 fn coverage(cli_env_vars: HashMap<String, String>, passthrough_args: &[String]) {
@@ -161,12 +207,22 @@ fn coverage(cli_env_vars: HashMap<String, String>, passthrough_args: &[String]) 
     ];
     args.extend(passthrough_args.iter().cloned());
 
-    let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    run_command(&args_ref, envs, &[], None);
+    let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_command(&args_ref, &envs, &[], None);
 }
 
-fn debug_build(envs: HashMap<String, String>, cli_env_vars: HashMap<String, String>, passthrough_args: &[String]) {
-    run_build("debug_build", &["build"], envs, cli_env_vars, passthrough_args);
+fn debug_build(
+    envs: HashMap<String, String>,
+    cli_env_vars: HashMap<String, String>,
+    passthrough_args: &[String],
+) {
+    run_build(
+        "debug_build",
+        &["build"],
+        envs,
+        cli_env_vars,
+        passthrough_args,
+    );
 }
 
 fn run_build(
@@ -184,19 +240,28 @@ fn run_build(
         default_envs.insert(k, v);
     }
 
-    run_command(cargo_args, default_envs, extra_args, None);
+    run_command(cargo_args, &default_envs, extra_args, None);
 }
 
-fn run_command(cargo_args: &[&str], default_envs: HashMap<String, String>, extra_args: &[String], explain: Option<&str>) {
+fn run_command(
+    cargo_args: &[&str],
+    default_envs: &HashMap<String, String>,
+    extra_args: &[String],
+    explain: Option<&str>,
+) {
     let mut cmd = Command::new("cargo");
     cmd.args(cargo_args);
     cmd.args(extra_args);
 
-    for (key, value) in &default_envs {
+    for (key, value) in default_envs {
         cmd.env(key, value);
     }
 
-    println!("> Running: cargo {} {}", cargo_args.join(" "), extra_args.join(" "));
+    println!(
+        "> Running: cargo {} {}",
+        cargo_args.join(" "),
+        extra_args.join(" ")
+    );
     println!("> With envs: {default_envs:?}");
 
     let status = match cmd.status() {
@@ -234,17 +299,18 @@ fn print_usage_and_exit() -> ! {
     exit(1);
 }
 
-const REQUIRED_HEADER: &str = r#"// Copyright (c) 2026 Contributors to the Eclipse Foundation
-//
-// See the NOTICE file(s) distributed with this work for additional
-// information regarding copyright ownership.
-//
-// This program and the accompanying materials are made available under the
-// terms of the Apache License Version 2.0 which is available at
-// <https://www.apache.org/licenses/LICENSE-2.0>
-//
-// SPDX-License-Identifier: Apache-2.0
-//"#;
+const REQUIRED_HEADER: &str = r"/*
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Apache License Version 2.0 which is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ */
+//";
 
 fn check_license_header() {
     let project_dir = match std::env::current_dir() {
