@@ -8,8 +8,11 @@
 # terms of the Apache License Version 2.0 which is available at
 # https://www.apache.org/licenses/LICENSE-2.0
 
-# This file specifies who owns what in the repository
-# Syntax: <pattern> <owner(s)>
-
-# Entire repo ownership
-*       @eclipse-opensovd/automotive-opensovd-committers
+# Needed for Dash tool to check python dependency licenses.
+filegroup(
+    name = "cargo_lock",
+    srcs = [
+        "//:Cargo.lock",
+    ],
+    visibility = ["//visibility:public"],
+)

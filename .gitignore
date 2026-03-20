@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 The Eclipse OpenSOVD contributors
+# SPDX-FileCopyrightText: 2026 The Eclipse OpenSOVD contributors
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -21,8 +21,12 @@ pip-delete-this-directory.txt
 
 # Rust
 target/
-Cargo.lock
 .sccache/
+
+# Bazel
+/bazel-*
+MODULE.bazel.lock
+user.bazelrc
 
 # C++
 *.o
@@ -50,9 +54,9 @@ compile_commands.json
 .idea/
 *.iml
 
-# VS Code
-.vscode/
-.vscode*
+# VS Code (user-specific settings only, shared settings are tracked)
+.vscode/*.code-workspace
+.vscode/.ropeproject
 
 # Sublime Text
 *.sublime-project
@@ -81,6 +85,16 @@ nb-configuration.xml
 *.DS_Store
 Thumbs.db
 .bash_history
+
+# Sphinx / docs build
+/_build
+
+# Ruff
+.ruff_cache
+
+# Vale (editorial style guide)
+.vale.ini
+styles/
 
 # General
 .cache/

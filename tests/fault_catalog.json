@@ -1,0 +1,53 @@
+{
+    "id": "hvac",
+    "version": 3,
+    "faults": [
+        {
+            "id": {
+                "Text": "d1"
+            },
+            "name": "Descriptor 1",
+            "summary": null,
+            "category": "Software",
+            "severity": "Debug",
+            "compliance": [
+                "EmissionRelevant",
+                "SafetyCritical"
+            ],
+            "reporter_side_debounce": {
+                "EdgeWithCooldown": {
+                    "cooldown": {
+                        "secs": 0,
+                        "nanos": 100000000
+                    }
+                }
+            },
+            "reporter_side_reset": null,
+            "manager_side_debounce": null,
+            "manager_side_reset": null
+        },
+        {
+            "id": {
+                "Text": "d2"
+            },
+            "name": "Descriptor 2",
+            "summary": "Human-readable summary",
+            "category": "Configuration",
+            "severity": "Warn",
+            "compliance": [
+                "SecurityRelevant"
+            ],
+            "reporter_side_debounce": null,
+            "reporter_side_reset": null,
+            "manager_side_debounce": {
+                "EdgeWithCooldown": {
+                    "cooldown": {
+                        "secs": 0,
+                        "nanos": 100000000
+                    }
+                }
+            },
+            "manager_side_reset": null
+        }
+    ]
+}

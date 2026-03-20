@@ -8,8 +8,5 @@
 # terms of the Apache License Version 2.0 which is available at
 # https://www.apache.org/licenses/LICENSE-2.0
 
-# This file specifies who owns what in the repository
-# Syntax: <pattern> <owner(s)>
-
-# Entire repo ownership
-*       @eclipse-opensovd/automotive-opensovd-committers
+too-many-lines-threshold = 130
+allow-unwrap-in-tests = true

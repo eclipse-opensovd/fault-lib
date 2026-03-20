@@ -1,0 +1,93 @@
+{
+    // General Settings
+    "files.insertFinalNewline": true,
+    "files.trimFinalNewlines": true,
+    "files.trimTrailingWhitespace": true,
+    "editor.insertSpaces": true,
+    "editor.tabCompletion": "on",
+
+    // Default for any filetype
+    "editor.rulers": [
+        99
+    ],
+
+    // Exclude build, temp and cache folders
+    "files.watcherExclude": {
+        ".*/**": true,
+        "**/__pycache__/**": true,
+        "bazel-*/**": true,
+        ".venv*/**": true,
+        "_build/**": true,
+        "target/**": true
+    },
+
+    // Rust Settings
+    "[rust]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "rust-lang.rust-analyzer"
+    },
+    "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.check.extraArgs": [
+        "--workspace"
+    ],
+
+    // Python Settings (for Bazel/tooling scripts)
+    "python.analysis.exclude": [
+        ".*",
+        "**/__pycache__",
+        "bazel-*",
+        ".venv*",
+        "_build"
+    ],
+    "[python]": {
+        "editor.rulers": [
+            79
+        ],
+        "editor.codeActionsOnSave": {
+            "source.sortImports": "explicit"
+        },
+        "editor.defaultFormatter": "charliermarsh.ruff"
+    },
+
+    // Markdown Settings
+    "[markdown]": {
+        "editor.rulers": [
+            79, 99
+        ]
+    },
+
+    // Bazel LSP
+    "bazel.lsp.command": "bazel",
+    "bazel.lsp.args": [
+        "run",
+        "//:starpls_server"
+    ],
+
+    // RST Settings
+    "[restructuredtext]": {
+        "editor.tabSize": 3
+    },
+
+    // Esbonio (Sphinx) Settings
+    "esbonio.server.pythonPath": "${workspaceFolder}/.venv_docs/bin/python",
+    "esbonio.sphinx.srcDir": "${workspaceFolder}/docs",
+    "esbonio.sphinx.confDir": "${workspaceFolder}/docs",
+    "esbonio.sphinx.buildDir": "${workspaceFolder}/_build",
+    "esbonio.server.logLevel": "info",
+    "esbonio.server.installBehavior": "nothing",
+
+    // Esbonio 1.x (Preview)
+    "esbonio.sphinx.pythonCommand": [
+        ".venv_docs/bin/python"
+    ],
+    "esbonio.sphinx.buildCommand": [
+        "docs",
+        "_build",
+        "-T",
+        "--jobs",
+        "auto",
+        "--conf-dir",
+        "docs"
+    ],
+    "esbonio.logging.level": "warning"
+}

@@ -8,8 +8,8 @@
 # terms of the Apache License Version 2.0 which is available at
 # https://www.apache.org/licenses/LICENSE-2.0
 
-# This file specifies who owns what in the repository
-# Syntax: <pattern> <owner(s)>
+package(default_visibility = ["//visibility:public"])
 
-# Entire repo ownership
-*       @eclipse-opensovd/automotive-opensovd-committers
+exports_files([
+    "iceoryx2_bb_derive_macros_readme.patch",
+])

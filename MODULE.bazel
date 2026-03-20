@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0
+module(
+    name = "score_fault_lib",
+    version = "0.0.1",
+    compatibility_level = 0,
+)
+
+bazel_dep(name = "rules_python", version = "1.4.1")
+
+PYTHON_VERSION = "3.12"
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    is_default = True,
+    python_version = PYTHON_VERSION,
+)
+use_repo(python)
+
+# Add GoogleTest dependency
+bazel_dep(name = "googletest", version = "1.17.0")
+bazel_dep(name = "google_benchmark", version = "1.9.4")
+
+# Rust rules for Bazel
+bazel_dep(name = "rules_rust", version = "0.67.0")
+
+# Checker rule for CopyRight checks/fixs
+bazel_dep(name = "score_cr_checker", version = "0.3.1")
+
+# C/C++ rules for Bazel
+bazel_dep(name = "rules_cc", version = "0.2.13")
+
+# LLVM Toolchains Rules - host configuration
+bazel_dep(name = "score_starpls_lsp", version = "0.1.0")
+
+# Dash license checker
+bazel_dep(name = "score_dash_license_checker", version = "0.1.2")
+
+# Format checker
+bazel_dep(name = "score_format_checker", version = "0.1.1")
+bazel_dep(name = "aspect_rules_lint", version = "1.4.4")
+bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2")
+
+#docs-as-code
+bazel_dep(name = "score_docs_as_code", version = "1.0.1")
+git_override(
+    module_name = "score_docs_as_code",
+    commit = "13ba715a95cfe85158b60d7f4748ba8e28895d8c",
+    remote = "https://github.com/eclipse-score/docs-as-code.git",
+)
+
+# Provides, pytest & venv
+bazel_dep(name = "score_python_basics", version = "0.3.4")
+bazel_dep(name = "score_platform", version = "0.3.0")
+bazel_dep(name = "score_process", version = "1.1.0")
+
+# Testing utils dependency.
+# Direct usage of tag in git_override reports false problem in editor, using hash of a tag
+bazel_dep(name = "testing-utils")
+git_override(
+    module_name = "testing-utils",
+    commit = "a847c7464cfa47e000141631d1223b92560d2e58",  # tag v0.2.0
+    remote = "https://github.com/qorix-group/testing_tools.git",
+)
+
+# Module deps
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2024",
+    versions = ["1.91.0"],
+)
+
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "score_fault_lib_crates",
+    cargo_lockfile = "//:Cargo.lock",
+    manifests = [
+        "//:Cargo.toml",
+    ],
+)
+use_repo(crate, "score_fault_lib_crates")
+
+#bazel_dep on module 'rules_boost' has no version -> override needed
+archive_override(
+    module_name = "rules_boost",
+    strip_prefix = "rules_boost-master",
+    urls = ["https://github.com/nelhage/rules_boost/archive/refs/heads/master.tar.gz"],
+)
+
+bazel_dep(name = "score-baselibs", version = "0.0.0")
+git_override(
+    module_name = "score-baselibs",
+    commit = "46923f5c4f302bd9feae0261588687aaf32e3c5c",
+    remote = "https://github.com/eclipse-score/baselibs.git",
+)
+
+bazel_dep(name = "score_cli_helper", version = "0.1.2")
+
+crate.annotation(
+    crate = "iceoryx2-bb-derive-macros",
+    patches = ["//patches:iceoryx2_bb_derive_macros_readme.patch"],
+    repositories = ["score_fault_lib_crates"],
+)

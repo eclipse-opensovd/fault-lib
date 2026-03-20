@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0
+
+version = 1
+
+# Declares copyright and license metadata for files that can't easily
+# contain license headers themselves.
+
+[[annotations]]
+path = ["LICENSE", "NOTICE", "CONTRIBUTORS", "LICENSES/**.txt"]
+SPDX-FileCopyrightText = "The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+  ".bazelversion",
+  ".yamlfmt",
+  "Cargo.lock",
+  ".vscode/extensions.json",
+  ".vscode/settings.json",
+]
+SPDX-FileCopyrightText = "2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["patches/iceoryx2_bb_derive_macros_readme.patch"]
+SPDX-FileCopyrightText = "2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+  "docs/drawings/lib_arch.drawio",
+  "docs/drawings/lib_arch.svg",
+  "docs/puml/**.svg",
+]
+SPDX-FileCopyrightText = "2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+  "src/fault_lib/examples/config_1.json",
+  "src/fault_lib/tests/data/hvac_fault_catalog.json",
+  "src/fault_lib/tests/data/ivi_fault_catalog.json",
+  "tests/fault_catalog.json",
+]
+SPDX-FileCopyrightText = "2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)"
+SPDX-License-Identifier = "Apache-2.0"
