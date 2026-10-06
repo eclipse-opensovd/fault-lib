@@ -37,6 +37,25 @@ bazel_dep(name = "score_cr_checker", version = "0.3.1")
 # C/C++ rules for Bazel
 bazel_dep(name = "rules_cc", version = "0.2.13")
 
+# C++ toolchain (hermetic GCC) - required for the C dependencies of the Rust
+# crates (e.g. iceoryx2). Registered so the module builds as an external
+# dependency without relying on the consumer's toolchain configuration.
+bazel_dep(name = "score_bazel_cpp_toolchains", version = "0.5.4")
+
+gcc = use_extension("@score_bazel_cpp_toolchains//extensions:gcc.bzl", "gcc")
+gcc.toolchain(
+    name = "score_gcc_x86_64_toolchain",
+    target_cpu = "x86_64",
+    target_os = "linux",
+    use_default_package = True,
+    version = "12.2.0",
+)
+use_repo(
+    gcc,
+    "score_gcc_x86_64_toolchain",
+)
+register_toolchains("@score_gcc_x86_64_toolchain//:x86_64-linux-gcc_12.2.0")
+
 # LLVM Toolchains Rules - host configuration
 bazel_dep(name = "score_starpls_lsp", version = "0.1.0")
 
