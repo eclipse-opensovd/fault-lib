@@ -161,6 +161,13 @@ bazel build //src/...
 bazel test //...
 ```
 
+### External Bazel consumer smoke
+
+```sh
+cd ci/external_consumer
+bazel build //:fault_lib_external_consumer_smoke
+```
+
 ### Miri (Undefined Behavior)
 
 ```sh

@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+
+module(name = "fault_lib_external_consumer_smoke")
+
+bazel_dep(name = "score_fault_lib", version = "0.0.1")
+bazel_dep(name = "rules_rust", version = "0.67.0")
+
+local_path_override(
+    module_name = "score_fault_lib",
+    path = "../..",
+)
+
+git_override(
+    module_name = "testing-utils",
+    commit = "a847c7464cfa47e000141631d1223b92560d2e58",
+    remote = "https://github.com/qorix-group/testing_tools.git",
+)
+
+git_override(
+    module_name = "score-baselibs",
+    commit = "46923f5c4f302bd9feae0261588687aaf32e3c5c",
+    remote = "https://github.com/eclipse-score/baselibs.git",
+)
+
+archive_override(
+    module_name = "rules_boost",
+    strip_prefix = "rules_boost-master",
+    urls = ["https://github.com/nelhage/rules_boost/archive/refs/heads/master.tar.gz"],
+)
+
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2024",
+    versions = ["1.91.0"],
+)
+use_repo(rust, "rust_toolchains")
+register_toolchains("@rust_toolchains//:all")
