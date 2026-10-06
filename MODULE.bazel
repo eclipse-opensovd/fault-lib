@@ -63,7 +63,7 @@ bazel_dep(name = "score_process", version = "1.1.0")
 
 # Testing utils dependency.
 # Direct usage of tag in git_override reports false problem in editor, using hash of a tag
-bazel_dep(name = "testing-utils")
+bazel_dep(name = "testing-utils", version = "0.2.0")
 git_override(
     module_name = "testing-utils",
     commit = "a847c7464cfa47e000141631d1223b92560d2e58",  # tag v0.2.0
