@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Contributors to Eclipse OpenSOVD (see CONTRIBUTORS)
+
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+rust_binary(
+    name = "dfm",
+    srcs = ["src/main.rs"],
+    edition = "2024",
+    deps = [
+        "//src/common",
+        "//src/dfm_lib",
+        "@score_fault_lib_crates//:clap",
+        "@score_fault_lib_crates//:tracing",
+        "@score_fault_lib_crates//:tracing-subscriber",
+    ],
+)

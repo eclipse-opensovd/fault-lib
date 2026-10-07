@@ -963,9 +963,10 @@ checksum = "a96887878f22d7bad8a3b6dc5b7440e0ada9a245242924394987b21cf2210a4c"
 [[package]]
 name = "rust_kvs"
 version = "0.1.0"
-source = "git+https://github.com/eclipse-score/persistency.git?branch=main#5d9f8225aa5622f52a31003bec937d5ef227dba7"
+source = "git+https://github.com/eclipse-score/persistency.git?tag=v0.3.5#9ae529ba9f413976ff5c9948c6490afa51bbfdc3"
 dependencies = [
  "adler32",
+ "score_log",
  "tinyjson",
 ]
 
@@ -1002,6 +1003,31 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "score_log"
+version = "0.0.1"
+source = "git+https://github.com/eclipse-score/baselibs.git?rev=2603afd58043810118b21ce7fca37a33894e5aef#2603afd58043810118b21ce7fca37a33894e5aef"
+dependencies = [
+ "score_log_fmt",
+ "score_log_fmt_macro",
+]
+
+[[package]]
+name = "score_log_fmt"
+version = "0.0.1"
+source = "git+https://github.com/eclipse-score/baselibs.git?rev=2603afd58043810118b21ce7fca37a33894e5aef#2603afd58043810118b21ce7fca37a33894e5aef"
+
+[[package]]
+name = "score_log_fmt_macro"
+version = "0.0.1"
+source = "git+https://github.com/eclipse-score/baselibs.git?rev=2603afd58043810118b21ce7fca37a33894e5aef#2603afd58043810118b21ce7fca37a33894e5aef"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "score_log_fmt",
+ "syn",
+]
 
 [[package]]
 name = "sdd"

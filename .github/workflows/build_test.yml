@@ -35,3 +35,14 @@ jobs:
       bazel-enabled: true
       bazel-build-targets: "//src/... //tests/..."
       bazel-test-targets: "//src/... //tests/..."
+
+  external-consumer-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+      - name: Build public libraries as an external consumer
+        working-directory: ci/external_consumer
+        run: bazel build //:fault_lib_external_consumer_smoke

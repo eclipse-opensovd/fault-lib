@@ -372,6 +372,8 @@ impl SovdFaultStateStorage for KvsSovdFaultStateStorage {
         );
         kvs.set_value(path, states)
             .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
+        kvs.flush()
+            .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
         Ok(())
     }
 
@@ -421,6 +423,8 @@ impl SovdFaultStateStorage for KvsSovdFaultStateStorage {
             .map_err(|e| StorageError::Backend(format!("lock poisoned: {e}")))?;
         kvs.remove_key(path)
             .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
+        kvs.flush()
+            .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
         Ok(())
     }
 
@@ -435,6 +439,8 @@ impl SovdFaultStateStorage for KvsSovdFaultStateStorage {
         let key = fault_id_to_key(fault_id);
         if states.remove(&key).is_some() {
             kvs.set_value(path, states)
+                .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
+            kvs.flush()
                 .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
             Ok(())
         } else {
