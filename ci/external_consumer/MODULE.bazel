@@ -4,7 +4,8 @@
 module(name = "fault_lib_external_consumer_smoke")
 
 bazel_dep(name = "score_fault_lib", version = "0.0.1")
-bazel_dep(name = "rules_rust", version = "0.67.0")
+bazel_dep(name = "rules_rust", version = "0.68.2-score")
+bazel_dep(name = "score_baselibs", version = "0.2.10")
 
 local_path_override(
     module_name = "score_fault_lib",
@@ -31,7 +32,7 @@ archive_override(
 
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
-    edition = "2024",
+    edition = "2021",
     versions = ["1.91.0"],
 )
 use_repo(rust, "rust_toolchains")

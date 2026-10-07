@@ -3,3 +3,4 @@
 
 common --registry=https://raw.githubusercontent.com/eclipse-score/bazel_registry/main/
 common --registry=https://bcr.bazel.build
+build --@score_baselibs//score/log_rust:safety_level=qm

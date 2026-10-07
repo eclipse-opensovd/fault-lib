@@ -24,7 +24,7 @@ iceoryx2.workspace = true
 iceoryx2-bb-container.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-rust_kvs = { git = "https://github.com/eclipse-score/persistency.git", branch = "main" }
+rust_kvs = { git = "https://github.com/eclipse-score/persistency.git", tag = "v0.3.5" }
 serde_json.workspace = true
 
 [dev-dependencies]
