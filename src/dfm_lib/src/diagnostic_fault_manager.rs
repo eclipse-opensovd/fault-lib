@@ -96,8 +96,9 @@ impl<S: SovdFaultStateStorage + 'static> DiagnosticFaultManager<S, Iceoryx2Trans
 
     /// Create a DFM with query server enabled for external IPC access.
     ///
-    /// When enabled, the DFM loop polls for incoming [`DfmQueryRequest`](common::query_protocol::DfmQueryRequest)s
-    /// and responds via iceoryx2 request-response on the `dfm/query` service.
+    /// When enabled, the DFM loop polls for incoming
+    /// [`DfmQueryRequest`](common::query_protocol::DfmQueryRequest)s and responds via
+    /// iceoryx2 request-response on the `dfm/query` service.
     ///
     /// # Panics
     ///
@@ -164,7 +165,8 @@ impl<S: SovdFaultStateStorage + 'static, T: DfmTransport> DiagnosticFaultManager
                                 Ok(server) => Some(server),
                                 Err(e) => {
                                     error!(
-                                        "Failed to create DfmQueryServer, query/clear disabled: {e}"
+                                        "Failed to create DfmQueryServer, query/clear disabled: \
+                                         {e}"
                                     );
                                     None
                                 }
@@ -257,7 +259,8 @@ impl<S: SovdFaultStateStorage, T: DfmTransport> Drop for DiagnosticFaultManager<
                 Ok(Ok(())) => info!("fault_lib_receiver_thread done"),
                 Ok(Err(err)) => error!("fault_lib_receiver_thread panicked: {err:?}"),
                 Err(_) => error!(
-                    "fault_lib_receiver_thread did not exit within {DROP_JOIN_TIMEOUT:?}, abandoning"
+                    "fault_lib_receiver_thread did not exit within {DROP_JOIN_TIMEOUT:?}, \
+                     abandoning"
                 ),
             }
         }

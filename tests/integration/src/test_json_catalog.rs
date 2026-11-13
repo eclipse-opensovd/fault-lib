@@ -158,7 +158,9 @@ fn json_string_with_debounce_and_reset() {
                 "category": "Hardware",
                 "severity": "Fatal",
                 "compliance": ["SafetyCritical", "EmissionRelevant"],
-                "reporter_side_debounce": { "HoldTime": { "duration": { "secs": 30, "nanos": 0 } } },
+                "reporter_side_debounce": {
+                    "HoldTime": { "duration": { "secs": 30, "nanos": 0 } }
+                },
                 "reporter_side_reset": null,
                 "manager_side_debounce": null,
                 "manager_side_reset": {

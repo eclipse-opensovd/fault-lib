@@ -33,11 +33,11 @@
 //!
 //! # Examples
 //!
-//! | Constant | Value | Direction |
-//! |----------|-------|-----------|
-//! | `DIAGNOSTIC_FAULT_MANAGER_EVENT_SERVICE_NAME` | `dfm/event` | reporter → DFM |
-//! | `DIAGNOSTIC_FAULT_MANAGER_HASH_CHECK_RESPONSE_SERVICE_NAME` | `dfm/event/hash/response` | DFM → reporter |
-//! | `ENABLING_CONDITION_NOTIFICATION_SERVICE_NAME` | `dfm/enabling_condition/notification` | DFM → reporters |
+//! - `DIAGNOSTIC_FAULT_MANAGER_EVENT_SERVICE_NAME`: `dfm/event` (reporter → DFM)
+//! - `DIAGNOSTIC_FAULT_MANAGER_HASH_CHECK_RESPONSE_SERVICE_NAME`:
+//!   `dfm/event/hash/response` (DFM → reporter)
+//! - `ENABLING_CONDITION_NOTIFICATION_SERVICE_NAME`:
+//!   `dfm/enabling_condition/notification` (DFM → reporters)
 
 /// Iceoryx2 service name for the main diagnostic-event channel (reporter → DFM).
 ///

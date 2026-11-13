@@ -77,7 +77,11 @@ macro_rules! fault_descriptor {
             common::fault::FaultDescriptor {
                 id: $id,
                 name: $crate::utils::to_static_short_string($name)
-                    .expect(concat!("fault_descriptor!: name '", $name, "' exceeds ShortString capacity")),
+                    .expect(concat!(
+                        "fault_descriptor!: name '",
+                        $name,
+                        "' exceeds ShortString capacity"
+                    )),
                 category: $kind,
                 severity: $sev,
                 compliance: $crate::__fault_descriptor_compliance_vec!($($($ctag),*)?),

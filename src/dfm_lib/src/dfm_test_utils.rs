@@ -142,7 +142,10 @@ fn fault_id_from_string(key: &str) -> fault::FaultId {
     {
         let mut bytes = [0u8; 16];
         for (i, byte) in bytes.iter_mut().enumerate() {
-            if let Ok(b) = u8::from_str_radix(&hex_str[i * 2..i * 2 + 2], 16) {
+            if let Some(Ok(b)) = hex_str
+                .get(i * 2..i * 2 + 2)
+                .map(|h| u8::from_str_radix(h, 16))
+            {
                 *byte = b;
             }
         }

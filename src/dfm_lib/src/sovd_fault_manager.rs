@@ -423,7 +423,8 @@ fn fault_id_to_code(fault_id: &fault::FaultId) -> String {
         fault::FaultId::Text(t) => t.to_string(),
         fault::FaultId::Uuid(u) => {
             format!(
-                "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:\
+                 02x}{:02x}{:02x}{:02x}",
                 u[0],
                 u[1],
                 u[2],
@@ -478,7 +479,8 @@ fn parse_uuid_string(s: &str) -> Option<[u8; 16]> {
     }
     let mut bytes = [0u8; 16];
     for (i, byte) in bytes.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+        let pair = hex.get(i * 2..i * 2 + 2)?;
+        *byte = u8::from_str_radix(pair, 16).ok()?;
     }
     Some(bytes)
 }
@@ -510,6 +512,12 @@ mod tests {
     fn error_is_std_error() {
         let err: Box<dyn std::error::Error> = Box::new(Error::NotFound);
         assert_eq!(format!("{err}"), "not found");
+    }
+
+    #[test]
+    fn parse_uuid_string_rejects_invalid_hex_and_char_boundary() {
+        assert!(parse_uuid_string(&"zz".repeat(16)).is_none());
+        assert!(parse_uuid_string(&format!("a\u{e9}{}", "0".repeat(29))).is_none());
     }
 
     #[test]

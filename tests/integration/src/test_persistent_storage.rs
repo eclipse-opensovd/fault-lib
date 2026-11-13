@@ -58,6 +58,10 @@ fn fault_state_survives_dfm_restart() {
             Some(true)
         );
 
+        let storage_path = shared_storage_path();
+        assert!(storage_path.join("kvs_0_0.json").is_file());
+        assert!(storage_path.join("kvs_0_0.hash").is_file());
+
         // harness dropped here — DFM shuts down.
     }
 

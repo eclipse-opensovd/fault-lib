@@ -22,7 +22,7 @@
 //! |--------|----------------|
 //! | [`diagnostic_fault_manager`] | Top-level orchestrator that wires sub-components together |
 //! | [`transport`] | [`DfmTransport`](transport::DfmTransport) trait — pluggable IPC abstraction |
-//! | [`fault_record_processor`] | Incoming record handling: debounce, hash verification, lifecycle transitions |
+//! | [`fault_record_processor`] | Incoming record handling: debounce, hash check, lifecycle |
 //! | [`aging_manager`] | Evaluates aging/reset policies (operation-cycle or time-based) |
 //! | [`operation_cycle`] | Tracks named operation cycles (ignition, drive, power) |
 //! | [`fault_catalog_registry`] | In-memory registry of catalogs received during handshake |
@@ -31,7 +31,7 @@
 //! | [`sovd_fault_storage`] | Persistent storage for SOVD fault state (backed by `rust_kvs`) |
 //! | [`query_api`] | [`DfmQueryApi`] trait abstracting SOVD query/clear for consumers |
 //! | [`query_ipc`] | [`Iceoryx2DfmQuery`] - IPC client implementing `DfmQueryApi` via iceoryx2 |
-//! | [`query_server`] | [`DfmQueryServer`](query_server::DfmQueryServer) - DFM-side request handler |
+//! | [`query_server`] | [`DfmQueryServer`](query_server::DfmQueryServer) - DFM request handler |
 //! | [`query_conversion`] | Bidirectional `SovdFault` <-> `IpcSovdFault` conversion |
 
 extern crate alloc;

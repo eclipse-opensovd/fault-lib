@@ -372,6 +372,8 @@ impl SovdFaultStateStorage for KvsSovdFaultStateStorage {
         );
         kvs.set_value(path, states)
             .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
+        kvs.flush()
+            .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
         Ok(())
     }
 
@@ -421,6 +423,8 @@ impl SovdFaultStateStorage for KvsSovdFaultStateStorage {
             .map_err(|e| StorageError::Backend(format!("lock poisoned: {e}")))?;
         kvs.remove_key(path)
             .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
+        kvs.flush()
+            .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
         Ok(())
     }
 
@@ -435,6 +439,8 @@ impl SovdFaultStateStorage for KvsSovdFaultStateStorage {
         let key = fault_id_to_key(fault_id);
         if states.remove(&key).is_some() {
             kvs.set_value(path, states)
+                .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
+            kvs.flush()
                 .map_err(|e| StorageError::Backend(format!("{e:?}")))?;
             Ok(())
         } else {
@@ -483,7 +489,10 @@ fn fault_id_from_key(key: &str) -> Result<fault::FaultId, StorageError> {
         }
         let mut bytes = [0u8; 16];
         for (i, byte) in bytes.iter_mut().enumerate() {
-            *byte = u8::from_str_radix(&hex_str[i * 2..i * 2 + 2], 16)
+            let pair = hex_str
+                .get(i * 2..i * 2 + 2)
+                .ok_or_else(|| StorageError::Deserialization(format!("invalid uuid hex: {key}")))?;
+            *byte = u8::from_str_radix(pair, 16)
                 .map_err(|_| StorageError::Deserialization(format!("invalid uuid hex: {key}")))?;
         }
         return Ok(fault::FaultId::Uuid(bytes));
@@ -582,6 +591,12 @@ mod tests {
     fn fault_id_key_invalid_numeric() {
         let result = fault_id_from_key("n:not_a_number");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn fault_id_key_invalid_uuid_hex_and_char_boundary() {
+        assert!(fault_id_from_key(&format!("u:{}", "zz".repeat(16))).is_err());
+        assert!(fault_id_from_key(&format!("u:a\u{e9}{}", "0".repeat(29))).is_err());
     }
 
     #[test]
