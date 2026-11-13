@@ -90,8 +90,8 @@ where
 
 /// Handle for an enabling condition provider.
 ///
-/// Created via [`FaultApi::get_enabling_condition`](crate::api::FaultApi::get_enabling_condition). The provider uses
-/// this handle to report status changes (active/inactive), which are
+/// Created via [`FaultApi::get_enabling_condition`](crate::api::FaultApi::get_enabling_condition).
+/// The provider uses this handle to report status changes (active/inactive), which are
 /// forwarded to the DFM via IPC and to local [`FaultMonitor`] subscribers.
 ///
 /// # Example
@@ -131,8 +131,8 @@ impl EnablingCondition {
 
 /// Monitor handle for receiving enabling condition change notifications.
 ///
-/// Created via [`FaultApi::create_fault_monitor`](crate::api::FaultApi::create_fault_monitor). When any of the
-/// monitored enabling conditions changes status, the registered callback
+/// Created via [`FaultApi::create_fault_monitor`](crate::api::FaultApi::create_fault_monitor).
+/// When any of the monitored enabling conditions changes status, the registered callback
 /// is invoked.
 ///
 /// The monitor automatically unregisters from the manager when dropped.

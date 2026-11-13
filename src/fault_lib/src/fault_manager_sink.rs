@@ -78,7 +78,8 @@ pub type WorkerReceiver = mpsc::Receiver<WorkerMsg>;
 
 #[derive(Debug)]
 pub(crate) enum WorkerMsg {
-    /// transports start message with the parent thread which will be unparked when the `sink_thread` thread is up and running
+    /// transports start message with the parent thread which will be unparked when the
+    /// `sink_thread` thread is up and running
     Start(std::thread::Thread),
 
     /// Sent by the `FaultManagerSink` when the fault monitor reports an event.

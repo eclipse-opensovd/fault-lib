@@ -489,7 +489,10 @@ fn fault_id_from_key(key: &str) -> Result<fault::FaultId, StorageError> {
         }
         let mut bytes = [0u8; 16];
         for (i, byte) in bytes.iter_mut().enumerate() {
-            *byte = u8::from_str_radix(&hex_str[i * 2..i * 2 + 2], 16)
+            let pair = hex_str
+                .get(i * 2..i * 2 + 2)
+                .ok_or_else(|| StorageError::Deserialization(format!("invalid uuid hex: {key}")))?;
+            *byte = u8::from_str_radix(pair, 16)
                 .map_err(|_| StorageError::Deserialization(format!("invalid uuid hex: {key}")))?;
         }
         return Ok(fault::FaultId::Uuid(bytes));

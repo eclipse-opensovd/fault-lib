@@ -14,8 +14,8 @@
 //!
 //! Enabling conditions control whether fault monitors should actively
 //! detect faults. When a condition is [`Active`](EnablingConditionStatus::Active),
-//! the associated fault detection runs normally. When [`Inactive`](EnablingConditionStatus::Inactive),
-//! fault detection is suspended.
+//! the associated fault detection runs normally. When
+//! [`Inactive`](EnablingConditionStatus::Inactive), fault detection is suspended.
 //!
 //! See `docs/puml/new_enable_condition.puml` and `docs/puml/enable_condition_ntf.puml`
 //! for the design-level sequence diagrams.

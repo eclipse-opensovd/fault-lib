@@ -43,7 +43,10 @@ use common::{
 /// impl DfmTransport for MyTransport {
 ///     fn receive_event(&self) -> Result<Option<DiagnosticEvent>, SinkError> { /* ... */ }
 ///     fn publish_hash_response(&self, response: bool) -> Result<(), SinkError> { /* ... */ }
-///     fn publish_ec_notification(&self, notification: EnablingConditionNotification) -> Result<(), SinkError> { /* ... */ }
+///     fn publish_ec_notification(
+///         &self,
+///         notification: EnablingConditionNotification,
+///     ) -> Result<(), SinkError> { /* ... */ }
 ///     fn wait(&self, timeout: Duration) -> Result<bool, SinkError> { /* ... */ }
 /// }
 /// ```

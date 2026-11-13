@@ -52,7 +52,8 @@ mod tests {
 
     /// Test helper function - creates the test fault catalog configuration structure
     ///
-    /// # Attention Any change in this function shall also be reflected in the `./tests/ivi_fault_catalog.json` file
+    /// # Attention Any change in this function shall also be reflected in the
+    /// `./tests/ivi_fault_catalog.json` file
     ///
     /// # Returns
     ///

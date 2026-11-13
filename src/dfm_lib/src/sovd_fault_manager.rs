@@ -423,7 +423,8 @@ fn fault_id_to_code(fault_id: &fault::FaultId) -> String {
         fault::FaultId::Text(t) => t.to_string(),
         fault::FaultId::Uuid(u) => {
             format!(
-                "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:\
+                 02x}{:02x}{:02x}{:02x}",
                 u[0],
                 u[1],
                 u[2],
@@ -478,7 +479,8 @@ fn parse_uuid_string(s: &str) -> Option<[u8; 16]> {
     }
     let mut bytes = [0u8; 16];
     for (i, byte) in bytes.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+        let pair = hex.get(i * 2..i * 2 + 2)?;
+        *byte = u8::from_str_radix(pair, 16).ok()?;
     }
     Some(bytes)
 }
