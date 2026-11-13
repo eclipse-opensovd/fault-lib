@@ -74,8 +74,10 @@ git_override(
 
 # Module deps
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+# Workspace targets set edition = "2024" explicitly. The toolchain default stays at
+# 2021 because external dependencies such as score_persistency's rust_kvs rely on it.
 rust.toolchain(
-    edition = "2024",
+    edition = "2021",
     versions = ["1.91.0"],
 )
 

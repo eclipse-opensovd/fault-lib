@@ -31,8 +31,9 @@ archive_override(
 )
 
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+# Own targets set edition = "2024"; dependencies such as rust_kvs need the 2021 default.
 rust.toolchain(
-    edition = "2024",
+    edition = "2021",
     versions = ["1.91.0"],
 )
 use_repo(rust, "rust_toolchains")
