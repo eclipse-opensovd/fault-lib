@@ -594,6 +594,12 @@ mod tests {
     }
 
     #[test]
+    fn fault_id_key_invalid_uuid_hex_and_char_boundary() {
+        assert!(fault_id_from_key(&format!("u:{}", "zz".repeat(16))).is_err());
+        assert!(fault_id_from_key(&format!("u:a\u{e9}{}", "0".repeat(29))).is_err());
+    }
+
+    #[test]
     fn backward_compat_missing_aging_fields() {
         // Simulate old KVS data without aging counters
         let mut map = KvsMap::new();

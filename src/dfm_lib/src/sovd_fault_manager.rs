@@ -515,6 +515,12 @@ mod tests {
     }
 
     #[test]
+    fn parse_uuid_string_rejects_invalid_hex_and_char_boundary() {
+        assert!(parse_uuid_string(&"zz".repeat(16)).is_none());
+        assert!(parse_uuid_string(&format!("a\u{e9}{}", "0".repeat(29))).is_none());
+    }
+
+    #[test]
     fn status_mask_all_zeros() {
         let status = SovdFaultStatus::default();
         assert_eq!(status.compute_mask(), 0x00);
